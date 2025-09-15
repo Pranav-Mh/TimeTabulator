@@ -11,22 +11,18 @@ const Table = ({ data, onView }) => (
       </tr>
     </thead>
     <tbody>
-      {data.length === 0 ? (
-        <tr>
-          <td colSpan={4}>No timetables found</td>
+      {data.map((row, index) => (
+        <tr key={index}>
+          <td>{row.name}</td>
+          <td>{row.time}</td>
+          <td>{row.date}</td>
+          <td>
+            <button className="view-btn" onClick={() => onView(row)}>
+              View
+            </button>
+          </td>
         </tr>
-      ) : (
-        data.map((row, idx) => (
-          <tr key={idx}>
-            <td>{row.name}</td>
-            <td>{row.time}</td>
-            <td>{row.date}</td>
-            <td>
-              <button className="view-btn" onClick={() => onView(row)}>View</button>
-            </td>
-          </tr>
-        ))
-      )}
+      ))}
     </tbody>
   </table>
 );

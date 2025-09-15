@@ -1,5 +1,6 @@
 import React from 'react';
 import Table from '../components/Table';
+import { useNavigate } from 'react-router-dom';
 
 const dummyData = [
   { name: 'tb-1', time: '08:10 AM', date: '08/08/2024' },
@@ -8,14 +9,30 @@ const dummyData = [
   { name: 'tb-4', time: '09:00 AM', date: '10/08/2024' }
 ];
 
-const Dashboard = ({ onGenerateNew, onViewTimetable }) => (
-  <>
-    <h1>Previous Timetable</h1>
-    <div className="table-container">
-      <Table data={dummyData} onView={onViewTimetable} />
-    </div>
-    <button className="generate-btn" onClick={onGenerateNew}>Generate New Timetable</button>
-  </>
-);
+const Dashboard = () => {
+  const navigate = useNavigate();
+
+  const handleGenerateNew = () => {
+    // (Optional: clear previous state here)
+    navigate("/syllabus");
+  };
+
+  const handleViewTimetable = (row) => {
+    // You can also use navigate here for viewing details
+    alert("View: " + row.name);
+  };
+
+  return (
+    <>
+      <h1>Previous Timetable</h1>
+      <div className="table-container">
+        <Table data={dummyData} onView={handleViewTimetable} />
+      </div>
+      <button className="generate-btn" onClick={handleGenerateNew}>
+        Generate New Timetable
+      </button>
+    </>
+  );
+};
 
 export default Dashboard;
