@@ -1,0 +1,73 @@
+.syllabus-page {
+  padding: 20px;
+  font-family: Arial, sans-serif;
+}
+
+.syllabus-page h1 {
+  font-size: 28px;
+  margin-bottom: 20px;
+}
+
+.year-selection, .divisions-control {
+  margin-bottom: 15px;
+}
+
+.year-selection label, .divisions-control label {
+  margin-right: 10px;
+  font-weight: bold;
+}
+
+.division-preview {
+  margin-bottom: 20px;
+  font-size: 16px;
+}
+
+.subjects-section {
+  margin-bottom: 20px;
+}
+
+.subjects-section table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.subjects-section th, .subjects-section td {
+  border: 1px solid #ccc;
+  padding: 8px;
+  text-align: center;
+}
+
+.subjects-section input, .subjects-section select {
+  padding: 5px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.add-btn {
+  padding: 6px 12px;
+  margin-bottom: 10px;
+  background-color: #3b82f6; /* Blue */
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.remove-btn {
+  padding: 5px 10px;
+  background-color: #ef4444; /* Red */
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.save-btn {
+  padding: 8px 16px;
+  background-color: #22c55e; /* Green */
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 16px;
+}

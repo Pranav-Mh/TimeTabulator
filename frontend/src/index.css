@@ -2,5 +2,3 @@
 @tailwind components;
 @tailwind utilities;
 
-/* app-level styles */
-html, body, #root { height: 100%; }

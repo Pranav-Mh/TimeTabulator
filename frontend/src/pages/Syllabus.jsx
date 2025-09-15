@@ -1,143 +1,131 @@
-import React, { useState } from "react";
-import axios from "axios";
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import './Syllabus.css';
 
-const SyllabusConfig = () => {
-  const [year, setYear] = useState("SE");
+const Syllabus = () => {
+  const [year, setYear] = useState('SE');
   const [divisions, setDivisions] = useState(1);
+  const [divisionNames, setDivisionNames] = useState(['SE-A']);
   const [subjects, setSubjects] = useState([
-    { name: "", type: "", credits: "", hours: "" },
+    { name: '', type: 'TH', credits: '', hours: '' }
   ]);
 
-  // Generate division names dynamically
-  const getDivisionNames = () => {
-    return Array.from({ length: divisions }, (_, i) => `${year}-${String.fromCharCode(65 + i)}`);
-  };
-
-  const handleAddSubject = () => {
-    setSubjects([...subjects, { name: "", type: "", credits: "", hours: "" }]);
-  };
-
-  const handleRemoveSubject = (index) => {
-    setSubjects(subjects.filter((_, i) => i !== index));
-  };
-
-  const handleSubjectChange = (index, field, value) => {
-    setSubjects(subjects.map((sub, i) =>
-      i === index ? { ...sub, [field]: value } : sub
-    ));
-  };
-
-  const handleSave = () => {
-    if (subjects.some(s => !s.name || !s.type || !s.credits || !s.hours)) {
-      alert("⚠️ Please fill in all subject fields.");
-      return;
+  // Update division names dynamically
+  useEffect(() => {
+    const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const names = [];
+    for (let i = 0; i < divisions; i++) {
+      names.push(`${year}-${letters[i]}`);
     }
+    setDivisionNames(names);
+  }, [divisions, year]);
 
-    axios.post("http://localhost:5000/api/syllabus", {
-      year,
-      divisions,
-      subjects,
-    })
-      .then(() => alert("✅ Syllabus Saved Successfully"))
-      .catch(() => alert("❌ Error saving syllabus"));
+  // Add a new subject row
+  const handleAddSubject = () => {
+    setSubjects([...subjects, { name: '', type: 'TH', credits: '', hours: '' }]);
+  };
+
+  // Remove a subject row
+  const handleRemoveSubject = (index) => {
+    const newSubjects = subjects.filter((_, i) => i !== index);
+    setSubjects(newSubjects);
+  };
+
+  // Update subject fields
+  const handleChange = (index, field, value) => {
+    const newSubjects = [...subjects];
+    newSubjects[index][field] = value;
+    setSubjects(newSubjects);
+  };
+
+  // Save syllabus to backend
+  const handleSave = () => {
+    const payload = { year, divisions, subjects };
+    axios.post('http://localhost:5000/api/syllabus', payload)
+      .then(() => alert('Syllabus saved successfully!'))
+      .catch(() => alert('Error saving syllabus!'));
   };
 
   return (
-    <div className="p-8 max-w-5xl mx-auto">
-      <h1 className="text-3xl font-semibold text-center mb-6">Syllabus Assignment</h1>
+    <div className="syllabus-page">
+      <h1>Syllabus Configuration</h1>
 
-      {/* Year Tabs */}
-      <div className="flex justify-center space-x-4 mb-6">
-        {["SE", "TE", "BE"].map((y) => (
-          <button
-            key={y}
-            onClick={() => setYear(y)}
-            className={`px-6 py-2 rounded-lg border transition ${
-              year === y ? "bg-purple-500 text-white" : "bg-gray-100"
-            }`}
-          >
-            {y}
-          </button>
-        ))}
+      {/* Academic Year Selection */}
+      <div className="year-selection">
+        <label>Academic Year: </label>
+        <select value={year} onChange={e => setYear(e.target.value)}>
+          <option value="SE">SE</option>
+          <option value="TE">TE</option>
+          <option value="BE">BE</option>
+        </select>
       </div>
 
-      {/* Divisions */}
-      <div className="flex items-center justify-between border rounded-lg p-4 mb-6">
-        <label className="flex items-center space-x-2">
-          <span className="font-medium">Number of Divisions:</span>
-          <input
-            type="number"
-            min="1"
-            value={divisions}
-            onChange={(e) => setDivisions(parseInt(e.target.value) || 1)}
-            className="border rounded p-2 w-20"
-          />
-        </label>
-        <div className="text-gray-600">
-          {getDivisionNames().join(", ")}
-        </div>
+      {/* Number of Divisions */}
+      <div className="divisions-control">
+        <label>Number of Divisions: </label>
+        <input
+          type="number"
+          min="1"
+          value={divisions}
+          onChange={e => setDivisions(parseInt(e.target.value) || 1)}
+        />
+      </div>
+
+      {/* Division Preview */}
+      <div className="division-preview">
+        <strong>Divisions:</strong> {divisionNames.join(', ')}
       </div>
 
       {/* Subjects Table */}
-      <div className="overflow-x-auto border rounded-lg">
-        <table className="w-full text-left">
-          <thead className="bg-gray-100">
+      <div className="subjects-section">
+        <button className="add-btn" onClick={handleAddSubject}>Add Subject</button>
+        <table>
+          <thead>
             <tr>
-              <th className="border p-2">Subject Name</th>
-              <th className="border p-2">Type</th>
-              <th className="border p-2">Credits</th>
-              <th className="border p-2">No. of Hours/Week</th>
-              <th className="border p-2">Action</th>
+              <th>Subject Name</th>
+              <th>Type</th>
+              <th>Credits</th>
+              <th>Hours/Week</th>
+              <th>Action</th>
             </tr>
           </thead>
           <tbody>
             {subjects.map((subj, idx) => (
               <tr key={idx}>
-                <td className="border p-2">
+                <td>
                   <input
                     type="text"
                     value={subj.name}
-                    onChange={(e) => handleSubjectChange(idx, "name", e.target.value)}
-                    className="border rounded p-2 w-full"
-                    placeholder="Enter subject"
+                    onChange={e => handleChange(idx, 'name', e.target.value)}
                   />
                 </td>
-                <td className="border p-2">
+                <td>
                   <select
                     value={subj.type}
-                    onChange={(e) => handleSubjectChange(idx, "type", e.target.value)}
-                    className="border rounded p-2 w-full"
+                    onChange={e => handleChange(idx, 'type', e.target.value)}
                   >
-                    <option value="">Select</option>
                     <option value="TH">TH</option>
                     <option value="PR">PR</option>
                     <option value="VAP">VAP</option>
                     <option value="OE">OE</option>
                   </select>
                 </td>
-                <td className="border p-2">
+                <td>
                   <input
                     type="number"
                     value={subj.credits}
-                    onChange={(e) => handleSubjectChange(idx, "credits", e.target.value)}
-                    className="border rounded p-2 w-full"
+                    onChange={e => handleChange(idx, 'credits', e.target.value)}
                   />
                 </td>
-                <td className="border p-2">
+                <td>
                   <input
                     type="number"
                     value={subj.hours}
-                    onChange={(e) => handleSubjectChange(idx, "hours", e.target.value)}
-                    className="border rounded p-2 w-full"
+                    onChange={e => handleChange(idx, 'hours', e.target.value)}
                   />
                 </td>
-                <td className="border p-2 text-center">
-                  <button
-                    onClick={() => handleRemoveSubject(idx)}
-                    className="bg-red-500 text-white px-3 py-1 rounded"
-                  >
-                    Remove
-                  </button>
+                <td>
+                  <button className="remove-btn" onClick={() => handleRemoveSubject(idx)}>Remove</button>
                 </td>
               </tr>
             ))}
@@ -145,23 +133,10 @@ const SyllabusConfig = () => {
         </table>
       </div>
 
-      {/* Add Subject + Save */}
-      <div className="flex justify-between mt-6">
-        <button
-          onClick={handleAddSubject}
-          className="bg-gray-200 px-4 py-2 rounded hover:bg-gray-300"
-        >
-          + Add subject
-        </button>
-        <button
-          onClick={handleSave}
-          className="bg-purple-500 text-white px-6 py-2 rounded hover:bg-purple-600"
-        >
-          Save
-        </button>
-      </div>
+      {/* Save Button */}
+      <button className="save-btn" onClick={handleSave}>Save</button>
     </div>
   );
 };
 
-export default SyllabusConfig;
+export default Syllabus;
