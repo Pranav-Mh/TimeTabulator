@@ -1,19 +1,49 @@
-import React from "react";
-import { Link } from "react-router-dom";
+import React from 'react';
+import { Link, useLocation } from 'react-router-dom';
 
-export default function Sidebar() {
+const menuItems = [
+  { label: "Dashboard", path: "/dashboard" },
+  { label: "Syllabus", path: "/syllabus" },
+  { label: "Teacher", path: "/teacher" },
+  { label: "Lecture", path: "/lecture" },
+  { label: "Lab", path: "/lab" },
+  { label: "Configure Resources", path: "/resources" },
+  { label: "Generator", path: "/generator" },
+];
+
+const Sidebar = ({ activeStep }) => {
+  const location = useLocation();
   return (
-    <aside className="w-60 bg-white border-r min-h-screen">
-      <div className="p-4 border-b">
-        <div className="text-xl font-bold">TimeTabulator</div>
-        <div className="text-sm text-gray-500">Admin</div>
-      </div>
-      <nav className="p-4">
-        <ul className="space-y-2">
-          <li><Link to="/" className="text-gray-700 hover:text-blue-600">Dashboard</Link></li>
-          <li><Link to="/syllabus" className="text-gray-700 hover:text-blue-600">Syllabus</Link></li>
-        </ul>
+    <aside>
+      <nav>
+        {menuItems.map((item, idx) => {
+          // Enable only steps up to activeStep
+          const enabled = idx <= activeStep;
+          const isActive = location.pathname === item.path;
+
+          return (
+            <Link
+              key={item.label}
+              to={enabled ? item.path : '#'}
+              className={
+                isActive ? 'active' : enabled ? 'enabled' : ''
+              }
+              tabIndex={enabled ? 0 : -1}
+              aria-disabled={!enabled}
+              style={{
+                pointerEvents: enabled ? 'auto' : 'none',
+                color: isActive ? '#2563eb' : enabled ? '#3869e9' : '#b7bad9',
+                fontWeight: isActive ? 'bold' : 'normal',
+                background: isActive ? '#e0e7ff' : 'none',
+                opacity: enabled ? 1 : 0.5,
+                textDecoration: enabled ? 'none' : 'underline'
+              }}
+            >{item.label}</Link>
+          );
+        })}
       </nav>
     </aside>
   );
-}
+};
+
+export default Sidebar;
