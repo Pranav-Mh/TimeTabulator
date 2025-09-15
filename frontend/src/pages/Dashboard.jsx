@@ -1,12 +1,21 @@
-import React from "react";
+import React from 'react';
+import Table from '../components/Table';
 
-export default function Dashboard() {
-  return (
-    <div>
-      <h2 className="text-2xl font-semibold mb-4">Dashboard</h2>
-      <div className="p-4 bg-white rounded shadow">
-        <p>List of previous timetable sessions will appear here.</p>
-      </div>
+const dummyData = [
+  { name: 'tb-1', time: '08:10 AM', date: '08/08/2024' },
+  { name: 'tb-2', time: '10:00 AM', date: '08/08/2024' },
+  { name: 'tb-3', time: '02:30 PM', date: '09/08/2024' },
+  { name: 'tb-4', time: '09:00 AM', date: '10/08/2024' }
+];
+
+const Dashboard = ({ onGenerateNew, onViewTimetable }) => (
+  <>
+    <h1>Previous Timetable</h1>
+    <div className="table-container">
+      <Table data={dummyData} onView={onViewTimetable} />
     </div>
-  );
-}
+    <button className="generate-btn" onClick={onGenerateNew}>Generate New Timetable</button>
+  </>
+);
+
+export default Dashboard;
