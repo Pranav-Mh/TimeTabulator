@@ -4,7 +4,7 @@ import { Link, useLocation } from 'react-router-dom';
 const menuItems = [
   { label: "Dashboard", path: "/dashboard" },
   { label: "Syllabus", path: "/syllabus" },
-  { label: "Teacher", path: "/teacher" },
+  { label: "Teacher", path: "/teachers" },  // Changed path to /teachers to match Routes
   { label: "Lecture", path: "/lecture" },
   { label: "Lab", path: "/lab" },
   { label: "Configure Resources", path: "/resources" },
@@ -13,6 +13,7 @@ const menuItems = [
 
 const Sidebar = ({ activeStep }) => {
   const location = useLocation();
+
   return (
     <aside>
       <nav>
@@ -38,7 +39,9 @@ const Sidebar = ({ activeStep }) => {
                 opacity: enabled ? 1 : 0.5,
                 textDecoration: enabled ? 'none' : 'underline'
               }}
-            >{item.label}</Link>
+            >
+              {item.label}
+            </Link>
           );
         })}
       </nav>

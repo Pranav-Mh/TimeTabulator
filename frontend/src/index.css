@@ -244,3 +244,71 @@ button.generate-btn:hover {
     padding-top: 20px;
   }
 }
+
+/* ----------- Added styles for Teacher Data Management ---------- */
+.teachers-page {
+  padding: 20px;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.teacher-form {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.teacher-form input {
+  padding: 8px 12px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 1rem;
+}
+
+.teacher-form button {
+  padding: 8px 15px;
+  border-radius: 4px;
+  border: none;
+  color: white;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.add-btn {
+  background-color: #3b82f6; /* Blue */
+}
+
+.teacher-form button[type="button"] {
+  background-color: #ef4444; /* Red */
+}
+
+.teacher-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 1rem;
+}
+
+.teacher-table th, .teacher-table td {
+  padding: 10px;
+  border: 1px solid #ddd;
+  text-align: center;
+}
+
+.edit-btn {
+  background: #3b82f6;
+  color: white;
+  margin-right: 8px;
+  padding: 5px 12px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+}
+
+.delete-btn {
+  background: #ef4444;
+  color: white;
+  padding: 5px 12px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+}
