@@ -1,0 +1,51 @@
+.assign-page {
+  padding: 20px;
+}
+
+.assign-page h1 {
+  font-size: 28px;
+  font-weight: bold;
+  margin-bottom: 20px;
+}
+
+.assign-page label {
+  display: block;
+  margin-bottom: 10px;
+}
+
+.assign-page input, .assign-page select {
+  padding: 5px;
+  margin-left: 5px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.assign-page table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 15px;
+}
+
+.assign-page th, .assign-page td {
+  border: 1px solid #ccc;
+  padding: 8px;
+  text-align: center;
+}
+
+.assign-page button {
+  padding: 6px 12px;
+  margin-top: 10px;
+  margin-right: 5px;
+  border: none;
+  border-radius: 4px;
+  color: white;
+  cursor: pointer;
+}
+
+.assign-page .add-btn {
+  background-color: #3b82f6; /* Blue */
+}
+
+.assign-page .save-btn {
+  background-color: #22c55e; /* Green */
+}

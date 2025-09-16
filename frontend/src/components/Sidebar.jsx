@@ -4,7 +4,8 @@ import { Link, useLocation } from 'react-router-dom';
 const menuItems = [
   { label: "Dashboard", path: "/dashboard" },
   { label: "Syllabus", path: "/syllabus" },
-  { label: "Teacher", path: "/teachers" },  // Changed path to /teachers to match Routes
+  { label: "Teacher", path: "/teachers" },  
+  { label: "Assign Theory", path: "/assign-theory" }, 
   { label: "Lecture", path: "/lecture" },
   { label: "Lab", path: "/lab" },
   { label: "Configure Resources", path: "/resources" },
@@ -18,7 +19,6 @@ const Sidebar = ({ activeStep }) => {
     <aside>
       <nav>
         {menuItems.map((item, idx) => {
-          // Enable only steps up to activeStep
           const enabled = idx <= activeStep;
           const isActive = location.pathname === item.path;
 
@@ -26,9 +26,7 @@ const Sidebar = ({ activeStep }) => {
             <Link
               key={item.label}
               to={enabled ? item.path : '#'}
-              className={
-                isActive ? 'active' : enabled ? 'enabled' : ''
-              }
+              className={isActive ? 'active' : enabled ? 'enabled' : ''}
               tabIndex={enabled ? 0 : -1}
               aria-disabled={!enabled}
               style={{

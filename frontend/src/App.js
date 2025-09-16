@@ -6,7 +6,8 @@ import Sidebar from './components/Sidebar';
 
 import Dashboard from './pages/Dashboard';
 import Syllabus from './pages/Syllabus';
-import Teachers from './pages/Teachers'; // Import the new Teachers page
+import AssignTheory from "./pages/AssignTheory";
+import Teachers from './pages/Teachers';
 
 import './index.css';
 
@@ -15,13 +16,13 @@ function App() {
     <Router>
       <Header />
       <div className="app-main">
-        {/* Pass activeStep prop to enable sidebar links */}
         <Sidebar activeStep={10} />
         <div className="dashboard-content">
           <Routes>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/syllabus" element={<Syllabus />} />
+            <Route path="/assign-theory" element={<AssignTheory />} />
             <Route path="/teachers" element={<Teachers />} />
           </Routes>
         </div>
@@ -29,6 +30,5 @@ function App() {
     </Router>
   );
 }
-
 
 export default App;
