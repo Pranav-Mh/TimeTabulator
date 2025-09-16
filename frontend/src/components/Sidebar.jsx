@@ -5,7 +5,7 @@ const menuItems = [
   { label: "Dashboard", path: "/dashboard" },
   { label: "Syllabus", path: "/syllabus" },
   { label: "Teacher", path: "/teacher" },
-  { label: "Lecture", path: "/lecture" },
+  { label: "Assign Theory", path: "/assign-theory" }, // ✅ Replaced Lecture
   { label: "Lab", path: "/lab" },
   { label: "Configure Resources", path: "/resources" },
   { label: "Generator", path: "/generator" },
@@ -13,6 +13,7 @@ const menuItems = [
 
 const Sidebar = ({ activeStep }) => {
   const location = useLocation();
+
   return (
     <aside>
       <nav>
@@ -25,9 +26,7 @@ const Sidebar = ({ activeStep }) => {
             <Link
               key={item.label}
               to={enabled ? item.path : '#'}
-              className={
-                isActive ? 'active' : enabled ? 'enabled' : ''
-              }
+              className={isActive ? 'active' : enabled ? 'enabled' : ''}
               tabIndex={enabled ? 0 : -1}
               aria-disabled={!enabled}
               style={{
@@ -38,7 +37,9 @@ const Sidebar = ({ activeStep }) => {
                 opacity: enabled ? 1 : 0.5,
                 textDecoration: enabled ? 'none' : 'underline'
               }}
-            >{item.label}</Link>
+            >
+              {item.label}
+            </Link>
           );
         })}
       </nav>
