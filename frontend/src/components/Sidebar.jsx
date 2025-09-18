@@ -4,11 +4,11 @@ import { Link, useLocation } from 'react-router-dom';
 const menuItems = [
   { label: "Dashboard", path: "/dashboard" },
   { label: "Syllabus", path: "/syllabus" },
-  { label: "Teacher", path: "/teachers" },  
-  { label: "Assign Theory", path: "/assign-theory" }, 
+  { label: "Teacher", path: "/teachers" },
+  // Removed "Assign Theory" as redundant
   { label: "Lecture", path: "/lecture" },
   { label: "Lab", path: "/lab" },
-  { label: "Configure Resources", path: "/resources" },
+  { label: "Configure Resources", path: "/configure-resources" }, // Fixed path
   { label: "Generator", path: "/generator" },
 ];
 
