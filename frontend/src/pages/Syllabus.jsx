@@ -40,10 +40,39 @@ const Syllabus = () => {
 
   // Save syllabus to backend
   const handleSave = () => {
-    const payload = { year, divisions, subjects };
+    // Sanitize subjects and convert numeric fields
+    const sanitizedSubjects = subjects
+      .filter(s => s.name.trim() !== '') // Filter out empty names
+      .map(s => ({
+        name: s.name.trim(),
+        type: s.type,
+        credits: Number(s.credits) || 0,
+        hours: Number(s.hours) || 0
+      }));
+
+    if (sanitizedSubjects.length === 0) {
+      alert('Please add at least one subject with a valid name.');
+      return;
+    }
+
+    const payload = {
+      year,
+      divisionCount: Number(divisions),
+      divisions: Array.from({ length: divisions }, (_, i) => `${year}-${String.fromCharCode(65 + i)}`),
+      subjects: sanitizedSubjects
+    };
+
+    console.log("Sending payload:", payload);
+
     axios.post('http://localhost:5000/api/syllabus', payload)
       .then(() => alert('Syllabus saved successfully!'))
-      .catch(() => alert('Error saving syllabus!'));
+      .catch(err => {
+        if (err.response && err.response.data && err.response.data.message) {
+          alert('Error saving syllabus: ' + err.response.data.message);
+        } else {
+          alert('Error saving syllabus!');
+        }
+      });
   };
 
   return (
