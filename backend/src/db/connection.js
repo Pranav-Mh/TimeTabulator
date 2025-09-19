@@ -1,13 +1,22 @@
-const mysql = require('mysql2');
+// src/db/connection.js
+const mongoose = require('mongoose');
 
-const pool = mysql.createPool({
-  host: 'localhost',
-  user: 'root',
-  password: '3051',
-  database: 'timetabulator_db',
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0
+console.log('🔗 Attempting to connect to MongoDB Atlas...');
+
+mongoose.connect('mongodb+srv://pranavmhaisdhunesomnath112023051_db_user:iQ4WxTyxLNUSVXql@cluster0.yebudrj.mongodb.net/timetabulator_db?retryWrites=true&w=majority&appName=Cluster0');
+
+const db = mongoose.connection;
+
+db.on('error', (error) => {
+  console.error('❌ MongoDB connection error:', error);
 });
 
-module.exports = pool.promise();
+db.once('open', () => {
+  console.log('✅ Connected to MongoDB Atlas successfully!');
+});
+
+db.on('disconnected', () => {
+  console.log('⚠️ MongoDB disconnected');
+});
+
+module.exports = mongoose;
