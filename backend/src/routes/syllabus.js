@@ -37,7 +37,7 @@ router.get('/:year', async (req, res) => {
   }
 });
 
-// Create/Update syllabus
+// Create/Update syllabus with course code validation
 router.post('/', async (req, res) => {
   try {
     const { academicYear, numDivisions, subjects } = req.body;
@@ -46,6 +46,25 @@ router.post('/', async (req, res) => {
     if (!academicYear || !numDivisions || !subjects || subjects.length === 0) {
       return res.status(400).json({ 
         error: "Missing required fields: academicYear, numDivisions, and subjects" 
+      });
+    }
+
+    // Validate subject structure
+    for (const subject of subjects) {
+      if (!subject.courseCode || !subject.name || !subject.credits || !subject.hoursPerWeek) {
+        return res.status(400).json({ 
+          error: "Each subject must have courseCode, name, credits, and hoursPerWeek" 
+        });
+      }
+    }
+
+    // Check for duplicate course codes within the same submission
+    const courseCodes = subjects.map(s => s.courseCode.toUpperCase());
+    const duplicateCodesInSubmission = courseCodes.filter((code, index) => courseCodes.indexOf(code) !== index);
+    
+    if (duplicateCodesInSubmission.length > 0) {
+      return res.status(400).json({ 
+        error: `Duplicate course codes found: ${[...new Set(duplicateCodesInSubmission)].join(', ')}` 
       });
     }
 
@@ -72,16 +91,50 @@ router.post('/', async (req, res) => {
 
     console.log('✅ Syllabus saved:', syllabus);
 
-    // Create subjects
+    // Create subjects with duplicate detection
     const subjectIds = [];
+    const createdCourseCodes = [];
+    
     for (const subjectData of subjects) {
-      const subject = new Subject({
-        ...subjectData,
+      // Check if course code already exists for this academic year (from previous syllabuses)
+      const existingSubject = await Subject.findOne({
+        courseCode: subjectData.courseCode.toUpperCase(),
         academicYear,
-        syllabusId: syllabus._id
+        syllabusId: { $ne: syllabus._id } // Exclude current syllabus
       });
-      await subject.save();
-      subjectIds.push(subject._id);
+
+      if (existingSubject) {
+        // Clean up created subjects if validation fails
+        await Subject.deleteMany({ syllabusId: syllabus._id });
+        return res.status(400).json({
+          error: `Course code "${subjectData.courseCode}" already exists for ${academicYear} academic year`
+        });
+      }
+
+      try {
+        const subject = new Subject({
+          ...subjectData,
+          courseCode: subjectData.courseCode.toUpperCase(),
+          academicYear,
+          syllabusId: syllabus._id
+        });
+        
+        await subject.save();
+        subjectIds.push(subject._id);
+        createdCourseCodes.push(subject.courseCode);
+        
+      } catch (error) {
+        // Clean up created subjects if validation fails
+        await Subject.deleteMany({ syllabusId: syllabus._id });
+        
+        if (error.code === 11000) { // MongoDB duplicate key error
+          const duplicateField = error.keyPattern?.courseCode ? 'courseCode' : 'unknown field';
+          return res.status(400).json({
+            error: `Duplicate ${duplicateField}: ${subjectData.courseCode} already exists`
+          });
+        }
+        throw error;
+      }
     }
 
     // Update syllabus with subject IDs
@@ -96,7 +149,13 @@ router.post('/', async (req, res) => {
     await updateSyllabusStatus(academicYear);
 
     console.log('✅ Syllabus completed for:', academicYear);
-    res.status(201).json(syllabus);
+    console.log('✅ Created course codes:', createdCourseCodes);
+    
+    res.status(201).json({
+      syllabus,
+      message: `Successfully created syllabus with ${createdCourseCodes.length} subjects`,
+      courseCodes: createdCourseCodes
+    });
 
   } catch (err) {
     console.error('❌ Error creating syllabus:', err);

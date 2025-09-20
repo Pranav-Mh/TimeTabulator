@@ -1,6 +1,12 @@
 const mongoose = require('mongoose');
 
 const SubjectSchema = new mongoose.Schema({
+  courseCode: {
+    type: String,
+    required: true,
+    trim: true,
+    uppercase: true
+  },
   name: {
     type: String,
     required: true
@@ -33,5 +39,8 @@ const SubjectSchema = new mongoose.Schema({
 }, {
   timestamps: true
 });
+
+// Compound unique index: courseCode + academicYear + syllabusId
+SubjectSchema.index({ courseCode: 1, academicYear: 1, syllabusId: 1 }, { unique: true });
 
 module.exports = mongoose.model('Subject', SubjectSchema);
