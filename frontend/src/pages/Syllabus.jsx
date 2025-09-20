@@ -28,7 +28,17 @@ const Syllabus = () => {
     try {
       const res = await axios.get(`http://localhost:5000/api/syllabus/${year}`);
       setNumDivisions(res.data.numDivisions);
-      setSubjects(res.data.subjects || []);
+      
+      // Map existing subjects to include courseCode
+      const existingSubjects = res.data.subjects?.map(subject => ({
+        courseCode: subject.courseCode || '',
+        name: subject.name || '',
+        type: subject.type || 'TH',
+        credits: subject.credits || '',
+        hoursPerWeek: subject.hoursPerWeek || ''
+      })) || [];
+      
+      setSubjects(existingSubjects);
     } catch (err) {
       // Syllabus doesn't exist yet, start fresh
       setNumDivisions(1);
@@ -44,7 +54,7 @@ const Syllabus = () => {
   const addSubject = () => {
     setSubjects([
       ...subjects,
-      { name: '', type: 'TH', credits: '', hoursPerWeek: '' }
+      { courseCode: '', name: '', type: 'TH', credits: '', hoursPerWeek: '' }
     ]);
   };
 
@@ -54,8 +64,48 @@ const Syllabus = () => {
 
   const updateSubject = (index, field, value) => {
     const updatedSubjects = [...subjects];
+    
+    // Auto-generate course code if name is provided and courseCode is empty
+    if (field === 'name' && !updatedSubjects[index].courseCode && value) {
+      const baseCode = getYearPrefix(selectedYear) + (index + 1).toString().padStart(2, '0');
+      updatedSubjects[index].courseCode = baseCode;
+    }
+    
     updatedSubjects[index][field] = value;
     setSubjects(updatedSubjects);
+    
+    // Clear error when user makes changes
+    if (errorMessage) setErrorMessage('');
+  };
+
+  const getYearPrefix = (year) => {
+    const prefixes = { 'SE': 'CSE3', 'TE': 'CSE4', 'BE': 'CSE5' };
+    return prefixes[year] || 'CSE3';
+  };
+
+  const validateSubjects = () => {
+    if (subjects.length === 0) {
+      return 'Please add at least one subject';
+    }
+
+    // Check for required fields
+    for (const subject of subjects) {
+      if (!subject.courseCode || !subject.name || !subject.credits || !subject.hoursPerWeek) {
+        return 'Please fill all subject fields including Course Code';
+      }
+      if (subject.courseCode.length < 3) {
+        return 'Course Code must be at least 3 characters long';
+      }
+    }
+
+    // Check for duplicate course codes
+    const courseCodes = subjects.map(s => s.courseCode.toUpperCase());
+    const duplicates = courseCodes.filter((code, index) => courseCodes.indexOf(code) !== index);
+    if (duplicates.length > 0) {
+      return `Duplicate course codes found: ${[...new Set(duplicates)].join(', ')}`;
+    }
+
+    return null;
   };
 
   const handleSubmit = async (e) => {
@@ -63,33 +113,28 @@ const Syllabus = () => {
     setErrorMessage('');
     setSuccessMessage('');
 
-    // Validation
-    if (subjects.length === 0) {
-      setErrorMessage('Please add at least one subject');
+    // Validate subjects
+    const validationError = validateSubjects();
+    if (validationError) {
+      setErrorMessage(validationError);
       return;
     }
 
-    for (const subject of subjects) {
-      if (!subject.name || !subject.credits || !subject.hoursPerWeek) {
-        setErrorMessage('Please fill all subject fields');
-        return;
-      }
-    }
-
     try {
-      await axios.post('http://localhost:5000/api/syllabus', {
+      const response = await axios.post('http://localhost:5000/api/syllabus', {
         academicYear: selectedYear,
         numDivisions: parseInt(numDivisions),
         subjects: subjects.map(s => ({
           ...s,
+          courseCode: s.courseCode.toUpperCase(),
           credits: parseInt(s.credits),
           hoursPerWeek: parseInt(s.hoursPerWeek)
         }))
       });
 
-      setSuccessMessage(`✅ ${selectedYear} syllabus saved successfully!`);
+      setSuccessMessage(`✅ ${selectedYear} syllabus saved successfully! Created ${response.data.courseCodes?.length || 0} subjects.`);
       fetchSyllabusStatus();
-      setTimeout(() => setSuccessMessage(''), 3000);
+      setTimeout(() => setSuccessMessage(''), 5000);
 
     } catch (err) {
       const errorMsg = err.response?.data?.error || 'An error occurred while saving syllabus';
@@ -212,6 +257,7 @@ const Syllabus = () => {
         <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '20px' }}>
           <thead>
             <tr style={{ backgroundColor: '#f8f9fa' }}>
+              <th style={{ border: '1px solid #dee2e6', padding: '10px' }}>Course Code</th>
               <th style={{ border: '1px solid #dee2e6', padding: '10px' }}>Subject Name</th>
               <th style={{ border: '1px solid #dee2e6', padding: '10px' }}>Type</th>
               <th style={{ border: '1px solid #dee2e6', padding: '10px' }}>Credits</th>
@@ -222,6 +268,21 @@ const Syllabus = () => {
           <tbody>
             {subjects.map((subject, index) => (
               <tr key={index}>
+                <td style={{ border: '1px solid #dee2e6', padding: '8px' }}>
+                  <input
+                    type="text"
+                    value={subject.courseCode}
+                    onChange={(e) => updateSubject(index, 'courseCode', e.target.value)}
+                    placeholder="CSE301"
+                    style={{ 
+                      width: '100%', 
+                      padding: '5px', 
+                      border: '1px solid #ccc',
+                      textTransform: 'uppercase'
+                    }}
+                    maxLength="10"
+                  />
+                </td>
                 <td style={{ border: '1px solid #dee2e6', padding: '8px' }}>
                   <input
                     type="text"
@@ -283,6 +344,25 @@ const Syllabus = () => {
             ))}
           </tbody>
         </table>
+      )}
+
+      {/* Course Code Guidelines */}
+      {subjects.length > 0 && (
+        <div style={{ 
+          backgroundColor: '#e3f2fd', 
+          padding: '10px', 
+          borderRadius: '5px', 
+          marginBottom: '20px',
+          fontSize: '14px'
+        }}>
+          <strong>📋 Course Code Guidelines:</strong>
+          <ul style={{ margin: '5px 0', paddingLeft: '20px' }}>
+            <li>Use unique codes like CSE301, CSE301P, CSE302</li>
+            <li>Theory and Practical can have different codes for same subject</li>
+            <li>Example: CSE301 (OOP Theory), CSE301P (OOP Practical)</li>
+            <li>No duplicate course codes allowed</li>
+          </ul>
+        </div>
       )}
 
       {/* Save Button */}
