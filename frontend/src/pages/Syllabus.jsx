@@ -1,169 +1,306 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import './Syllabus.css';
+import '../index.css';
 
 const Syllabus = () => {
-  const [year, setYear] = useState('SE');
-  const [divisions, setDivisions] = useState(1);
-  const [divisionNames, setDivisionNames] = useState(['SE-A']);
-  const [subjects, setSubjects] = useState([
-    { name: '', type: 'TH', credits: '', hours: '' }
-  ]);
+  const [selectedYear, setSelectedYear] = useState('SE');
+  const [numDivisions, setNumDivisions] = useState(1);
+  const [subjects, setSubjects] = useState([]);
+  const [syllabusStatus, setSyllabusStatus] = useState({});
+  const [errorMessage, setErrorMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
 
-  // Update division names dynamically
   useEffect(() => {
-    const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    const names = [];
-    for (let i = 0; i < divisions; i++) {
-      names.push(`${year}-${letters[i]}`);
+    fetchSyllabusStatus();
+    loadSyllabus(selectedYear);
+  }, [selectedYear]);
+
+  const fetchSyllabusStatus = async () => {
+    try {
+      const res = await axios.get('http://localhost:5000/api/syllabus/status');
+      setSyllabusStatus(res.data);
+    } catch (err) {
+      console.error('Error fetching syllabus status:', err);
     }
-    setDivisionNames(names);
-  }, [divisions, year]);
-
-  // Add a new subject row
-  const handleAddSubject = () => {
-    setSubjects([...subjects, { name: '', type: 'TH', credits: '', hours: '' }]);
   };
 
-  // Remove a subject row
-  const handleRemoveSubject = (index) => {
-    const newSubjects = subjects.filter((_, i) => i !== index);
-    setSubjects(newSubjects);
+  const loadSyllabus = async (year) => {
+    try {
+      const res = await axios.get(`http://localhost:5000/api/syllabus/${year}`);
+      setNumDivisions(res.data.numDivisions);
+      setSubjects(res.data.subjects || []);
+    } catch (err) {
+      // Syllabus doesn't exist yet, start fresh
+      setNumDivisions(1);
+      setSubjects([]);
+    }
   };
 
-  // Update subject fields
-  const handleChange = (index, field, value) => {
-    const newSubjects = [...subjects];
-    newSubjects[index][field] = value;
-    setSubjects(newSubjects);
+  const generateDivisionNames = (year, count) => {
+    const divisions = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
+    return Array.from({ length: count }, (_, i) => `${year}-${divisions[i]}`).join(', ');
   };
 
-  // Save syllabus to backend
-  const handleSave = () => {
-    // Sanitize subjects and convert numeric fields
-    const sanitizedSubjects = subjects
-      .filter(s => s.name.trim() !== '') // Filter out empty names
-      .map(s => ({
-        name: s.name.trim(),
-        type: s.type,
-        credits: Number(s.credits) || 0,
-        hours: Number(s.hours) || 0
-      }));
+  const addSubject = () => {
+    setSubjects([
+      ...subjects,
+      { name: '', type: 'TH', credits: '', hoursPerWeek: '' }
+    ]);
+  };
 
-    if (sanitizedSubjects.length === 0) {
-      alert('Please add at least one subject with a valid name.');
+  const removeSubject = (index) => {
+    setSubjects(subjects.filter((_, i) => i !== index));
+  };
+
+  const updateSubject = (index, field, value) => {
+    const updatedSubjects = [...subjects];
+    updatedSubjects[index][field] = value;
+    setSubjects(updatedSubjects);
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setErrorMessage('');
+    setSuccessMessage('');
+
+    // Validation
+    if (subjects.length === 0) {
+      setErrorMessage('Please add at least one subject');
       return;
     }
 
-    const payload = {
-      year,
-      divisionCount: Number(divisions),
-      divisions: Array.from({ length: divisions }, (_, i) => `${year}-${String.fromCharCode(65 + i)}`),
-      subjects: sanitizedSubjects
-    };
+    for (const subject of subjects) {
+      if (!subject.name || !subject.credits || !subject.hoursPerWeek) {
+        setErrorMessage('Please fill all subject fields');
+        return;
+      }
+    }
 
-    console.log("Sending payload:", payload);
-
-    axios.post('http://localhost:5000/api/syllabus', payload)
-      .then(() => alert('Syllabus saved successfully!'))
-      .catch(err => {
-        if (err.response && err.response.data && err.response.data.message) {
-          alert('Error saving syllabus: ' + err.response.data.message);
-        } else {
-          alert('Error saving syllabus!');
-        }
+    try {
+      await axios.post('http://localhost:5000/api/syllabus', {
+        academicYear: selectedYear,
+        numDivisions: parseInt(numDivisions),
+        subjects: subjects.map(s => ({
+          ...s,
+          credits: parseInt(s.credits),
+          hoursPerWeek: parseInt(s.hoursPerWeek)
+        }))
       });
+
+      setSuccessMessage(`✅ ${selectedYear} syllabus saved successfully!`);
+      fetchSyllabusStatus();
+      setTimeout(() => setSuccessMessage(''), 3000);
+
+    } catch (err) {
+      const errorMsg = err.response?.data?.error || 'An error occurred while saving syllabus';
+      setErrorMessage(errorMsg);
+    }
   };
+
+  const canAccessLecture = syllabusStatus.lectureAccessAllowed;
+  const seStatus = syllabusStatus.seCompleted ? '✅' : '❌';
+  const teStatus = syllabusStatus.teCompleted ? '✅' : '❌';
+  const beStatus = syllabusStatus.beCompleted ? '✅' : '⚪';
 
   return (
     <div className="syllabus-page">
       <h1>Syllabus Configuration</h1>
+      
+      {/* Progress Status */}
+      <div style={{ 
+        backgroundColor: '#f8f9fa', 
+        padding: '15px', 
+        marginBottom: '20px', 
+        borderRadius: '8px',
+        border: '1px solid #dee2e6'
+      }}>
+        <h3>Completion Status:</h3>
+        <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+          <span>SE: {seStatus}</span>
+          <span>TE: {teStatus}</span>
+          <span>BE: {beStatus}</span>
+          <span style={{ 
+            color: canAccessLecture ? 'green' : 'red',
+            fontWeight: 'bold'
+          }}>
+            {canAccessLecture ? '🔓 Lecture Tab Unlocked' : '🔒 Complete SE + TE to unlock Lecture Tab'}
+          </span>
+        </div>
+      </div>
+
+      {/* Error/Success Messages */}
+      {errorMessage && (
+        <div style={{ 
+          color: 'red', 
+          backgroundColor: '#ffe6e6', 
+          padding: '10px', 
+          borderRadius: '5px', 
+          marginBottom: '10px',
+          border: '1px solid red'
+        }}>
+          ⚠️ {errorMessage}
+        </div>
+      )}
+      
+      {successMessage && (
+        <div style={{ 
+          color: 'green', 
+          backgroundColor: '#e6ffe6', 
+          padding: '10px', 
+          borderRadius: '5px', 
+          marginBottom: '10px',
+          border: '1px solid green'
+        }}>
+          {successMessage}
+        </div>
+      )}
 
       {/* Academic Year Selection */}
-      <div className="year-selection">
+      <div style={{ marginBottom: '20px' }}>
         <label>Academic Year: </label>
-        <select value={year} onChange={e => setYear(e.target.value)}>
-          <option value="SE">SE</option>
-          <option value="TE">TE</option>
-          <option value="BE">BE</option>
+        <select 
+          value={selectedYear} 
+          onChange={(e) => setSelectedYear(e.target.value)}
+          style={{ marginLeft: '10px', padding: '5px' }}
+        >
+          <option value="SE">SE (Second Year)</option>
+          <option value="TE">TE (Third Year)</option>
+          <option value="BE">BE (Fourth Year)</option>
         </select>
       </div>
 
       {/* Number of Divisions */}
-      <div className="divisions-control">
+      <div style={{ marginBottom: '20px' }}>
         <label>Number of Divisions: </label>
         <input
           type="number"
           min="1"
-          value={divisions}
-          onChange={e => setDivisions(parseInt(e.target.value) || 1)}
+          max="10"
+          value={numDivisions}
+          onChange={(e) => setNumDivisions(e.target.value)}
+          style={{ marginLeft: '10px', padding: '5px', width: '80px' }}
         />
       </div>
 
       {/* Division Preview */}
-      <div className="division-preview">
-        <strong>Divisions:</strong> {divisionNames.join(', ')}
+      <div style={{ marginBottom: '20px' }}>
+        <strong>Divisions: </strong>
+        <span style={{ color: '#6c757d' }}>
+          {generateDivisionNames(selectedYear, parseInt(numDivisions))}
+        </span>
       </div>
 
+      {/* Add Subject Button */}
+      <button 
+        type="button"
+        onClick={addSubject}
+        style={{
+          backgroundColor: '#007bff',
+          color: 'white',
+          border: 'none',
+          padding: '10px 20px',
+          borderRadius: '5px',
+          marginBottom: '20px',
+          cursor: 'pointer'
+        }}
+      >
+        Add Subject
+      </button>
+
       {/* Subjects Table */}
-      <div className="subjects-section">
-        <button className="add-btn" onClick={handleAddSubject}>Add Subject</button>
-        <table>
+      {subjects.length > 0 && (
+        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '20px' }}>
           <thead>
-            <tr>
-              <th>Subject Name</th>
-              <th>Type</th>
-              <th>Credits</th>
-              <th>Hours/Week</th>
-              <th>Action</th>
+            <tr style={{ backgroundColor: '#f8f9fa' }}>
+              <th style={{ border: '1px solid #dee2e6', padding: '10px' }}>Subject Name</th>
+              <th style={{ border: '1px solid #dee2e6', padding: '10px' }}>Type</th>
+              <th style={{ border: '1px solid #dee2e6', padding: '10px' }}>Credits</th>
+              <th style={{ border: '1px solid #dee2e6', padding: '10px' }}>Hours/Week</th>
+              <th style={{ border: '1px solid #dee2e6', padding: '10px' }}>Action</th>
             </tr>
           </thead>
           <tbody>
-            {subjects.map((subj, idx) => (
-              <tr key={idx}>
-                <td>
+            {subjects.map((subject, index) => (
+              <tr key={index}>
+                <td style={{ border: '1px solid #dee2e6', padding: '8px' }}>
                   <input
                     type="text"
-                    value={subj.name}
-                    onChange={e => handleChange(idx, 'name', e.target.value)}
+                    value={subject.name}
+                    onChange={(e) => updateSubject(index, 'name', e.target.value)}
+                    placeholder="Subject Name"
+                    style={{ width: '100%', padding: '5px', border: '1px solid #ccc' }}
                   />
                 </td>
-                <td>
+                <td style={{ border: '1px solid #dee2e6', padding: '8px' }}>
                   <select
-                    value={subj.type}
-                    onChange={e => handleChange(idx, 'type', e.target.value)}
+                    value={subject.type}
+                    onChange={(e) => updateSubject(index, 'type', e.target.value)}
+                    style={{ width: '100%', padding: '5px' }}
                   >
-                    <option value="TH">TH</option>
-                    <option value="PR">PR</option>
-                    <option value="VAP">VAP</option>
-                    <option value="OE">OE</option>
+                    <option value="TH">TH (Theory)</option>
+                    <option value="PR">PR (Practical)</option>
+                    <option value="VAP">VAP (Value Added Program)</option>
+                    <option value="OE">OE (Open Elective)</option>
                   </select>
                 </td>
-                <td>
+                <td style={{ border: '1px solid #dee2e6', padding: '8px' }}>
                   <input
                     type="number"
-                    value={subj.credits}
-                    onChange={e => handleChange(idx, 'credits', e.target.value)}
+                    min="1"
+                    value={subject.credits}
+                    onChange={(e) => updateSubject(index, 'credits', e.target.value)}
+                    placeholder="Credits"
+                    style={{ width: '100%', padding: '5px', border: '1px solid #ccc' }}
                   />
                 </td>
-                <td>
+                <td style={{ border: '1px solid #dee2e6', padding: '8px' }}>
                   <input
                     type="number"
-                    value={subj.hours}
-                    onChange={e => handleChange(idx, 'hours', e.target.value)}
+                    min="1"
+                    value={subject.hoursPerWeek}
+                    onChange={(e) => updateSubject(index, 'hoursPerWeek', e.target.value)}
+                    placeholder="Hours/Week"
+                    style={{ width: '100%', padding: '5px', border: '1px solid #ccc' }}
                   />
                 </td>
-                <td>
-                  <button className="remove-btn" onClick={() => handleRemoveSubject(idx)}>Remove</button>
+                <td style={{ border: '1px solid #dee2e6', padding: '8px', textAlign: 'center' }}>
+                  <button
+                    type="button"
+                    onClick={() => removeSubject(index)}
+                    style={{
+                      backgroundColor: '#dc3545',
+                      color: 'white',
+                      border: 'none',
+                      padding: '5px 10px',
+                      borderRadius: '3px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Remove
+                  </button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
-      </div>
+      )}
 
       {/* Save Button */}
-      <button className="save-btn" onClick={handleSave}>Save</button>
+      <button
+        onClick={handleSubmit}
+        style={{
+          backgroundColor: '#28a745',
+          color: 'white',
+          border: 'none',
+          padding: '12px 30px',
+          borderRadius: '5px',
+          cursor: 'pointer',
+          fontSize: '16px',
+          fontWeight: 'bold'
+        }}
+      >
+        Save {selectedYear} Syllabus
+      </button>
     </div>
   );
 };

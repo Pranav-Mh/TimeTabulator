@@ -1,191 +1,255 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 import '../index.css';
 
-const MOCK_TEACHERS = [
-  { _id: 't1', name: 'Raj', maxWorkload: 20 },
-  { _id: 't2', name: 'Yash', maxWorkload: 21 },
-  { _id: 't3', name: 'Rina', maxWorkload: 15 },
-];
-
-const MOCK_SUBJECTS = [
-  { _id: 's1', name: 'DS', type: 'TH', hours: 2, year: 'SE', division: 'A' },
-  { _id: 's2', name: 'OOP', type: 'TH', hours: 3, year: 'SE', division: 'A' },
-  { _id: 's3', name: 'POM', type: 'TH', hours: 2, year: 'SE', division: 'A' },
-  { _id: 's4', name: 'AP', type: 'VAP', hours: 1, year: 'SE', division: 'A' },
-  { _id: 's5', name: 'ML', type: 'TH', hours: 3, year: 'TE', division: 'A' },
-];
-
-const STORAGE_PREFIX = 'assignTheory_v2';
-const getStorageKey = (year, division) => `${STORAGE_PREFIX}:${year}:${division}`;
-
-const loadAssignments = (year, division) => {
-  try {
-    const raw = localStorage.getItem(getStorageKey(year, division));
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-};
-
-const saveAssignments = (year, division, assignments) => {
-  localStorage.setItem(getStorageKey(year, division), JSON.stringify(assignments));
-};
-
-export default function AssignTheory() {
-  const [year, setYear] = useState('SE');
-  const [division, setDivision] = useState('A');
-  const [teachers, setTeachers] = useState([]);
+const Lecture = () => {
+  const [selectedYear, setSelectedYear] = useState('SE');
+  const [selectedDivision, setSelectedDivision] = useState('A');
+  const [divisions, setDivisions] = useState([]);
   const [subjects, setSubjects] = useState([]);
-  const [assignments, setAssignments] = useState({});
-  const [error, setError] = useState('');
+  const [teachers, setTeachers] = useState([]);
+  const [teacherWorkload, setTeacherWorkload] = useState([]);
+  const [canAccess, setCanAccess] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
 
   useEffect(() => {
-    setTeachers(MOCK_TEACHERS);
-    setSubjects(
-      MOCK_SUBJECTS.filter(
-        s => s.year === year && s.division === division && ['TH', 'OE', 'VAP'].includes(s.type)
-      )
-    );
-    setAssignments(loadAssignments(year, division));
-    setError('');
-  }, [year, division]);
+    checkAccess();
+  }, []);
 
-  const teacherLoads = useMemo(() => {
-    const loads = {};
-    Object.entries(assignments).forEach(([subId, tId]) => {
-      const sub = subjects.find(s => s._id === subId);
-      if (tId && sub) {
-        loads[tId] = (loads[tId] || 0) + sub.hours;
+  useEffect(() => {
+    if (canAccess) {
+      fetchDivisions();
+      fetchTeachers();
+      fetchTeacherWorkload();
+    }
+  }, [selectedYear, canAccess]);
+
+  useEffect(() => {
+    if (canAccess && divisions.length > 0) {
+      fetchSubjects();
+    }
+  }, [selectedYear, selectedDivision, canAccess, divisions]);
+
+  const checkAccess = async () => {
+    try {
+      const res = await axios.get('http://localhost:5000/api/lectures/access-check');
+      setCanAccess(res.data.canAccess);
+    } catch (err) {
+      setErrorMessage(err.response?.data?.error || 'Access denied');
+      setCanAccess(false);
+    }
+  };
+
+  const fetchDivisions = async () => {
+    try {
+      const res = await axios.get(`http://localhost:5000/api/lectures/divisions/${selectedYear}`);
+      setDivisions(res.data);
+      if (res.data.length > 0) {
+        // Set first division as default
+        const firstDivision = res.data[0].name.split('-')[1]; // SE-A -> A
+        setSelectedDivision(firstDivision);
       }
-    });
-    return loads;
-  }, [assignments, subjects]);
+    } catch (err) {
+      console.error('Error fetching divisions:', err);
+    }
+  };
 
-  const handleAssign = (subjectId, teacherId) => {
-    setError('');
-    if (!teacherId) {
-      setAssignments(prev => {
-        const next = { ...prev };
-        delete next[subjectId];
-        return next;
+  const fetchTeachers = async () => {
+    try {
+      const res = await axios.get('http://localhost:5000/api/teachers');
+      setTeachers(res.data);
+    } catch (err) {
+      console.error('Error fetching teachers:', err);
+    }
+  };
+
+  const fetchSubjects = async () => {
+    try {
+      const res = await axios.get(`http://localhost:5000/api/lectures/subjects/${selectedYear}/${selectedDivision}`);
+      setSubjects(res.data.subjects || []);
+    } catch (err) {
+      console.error('Error fetching subjects:', err);
+      setSubjects([]);
+    }
+  };
+
+  const fetchTeacherWorkload = async () => {
+    try {
+      const res = await axios.get('http://localhost:5000/api/lectures/teacher-workload');
+      setTeacherWorkload(res.data);
+    } catch (err) {
+      console.error('Error fetching teacher workload:', err);
+    }
+  };
+
+  const handleTeacherAssignment = async (subjectId, teacherId) => {
+    if (!teacherId) return;
+
+    setErrorMessage('');
+    setSuccessMessage('');
+
+    try {
+      const division = divisions.find(d => d.name === `${selectedYear}-${selectedDivision}`);
+      
+      await axios.post('http://localhost:5000/api/lectures/assign', {
+        subjectId,
+        divisionId: division._id,
+        teacherId
       });
-      return;
+
+      setSuccessMessage('✅ Teacher assigned successfully!');
+      fetchSubjects();
+      fetchTeacherWorkload();
+      setTimeout(() => setSuccessMessage(''), 3000);
+
+    } catch (err) {
+      const errorMsg = err.response?.data?.error || 'Failed to assign teacher';
+      setErrorMessage(errorMsg);
     }
-
-    const teacher = teachers.find(t => t._id === teacherId);
-    const subject = subjects.find(s => s._id === subjectId);
-    const currentLoad = teacherLoads[teacherId] || 0;
-    const alreadyAssigned = assignments[subjectId] === teacherId;
-
-    const projectedLoad = alreadyAssigned ? currentLoad : currentLoad + subject.hours;
-
-    if (projectedLoad > teacher.maxWorkload) {
-      setError(`Error: Teacher's workload limit exceeded for ${teacher.name}`);
-      return;
-    }
-
-    setAssignments(prev => ({ ...prev, [subjectId]: teacherId }));
   };
 
-  const handleSave = () => {
-    const unassigned = subjects.filter(s => !assignments[s._id]);
-    if (unassigned.length > 0) {
-      setError('Please assign all subjects before saving.');
-      return;
-    }
-    saveAssignments(year, division, assignments);
-    setError('');
-    alert('Assignments saved successfully!');
-  };
-
-  const handleClear = () => {
-    setAssignments({});
-    localStorage.removeItem(getStorageKey(year, division));
-    setError('');
-  };
+  if (!canAccess) {
+    return (
+      <div className="lecture-page">
+        <h1>Assign Teachers to Theory Subjects</h1>
+        <div style={{ 
+          color: 'red', 
+          backgroundColor: '#ffe6e6', 
+          padding: '20px', 
+          borderRadius: '8px',
+          textAlign: 'center',
+          marginTop: '50px'
+        }}>
+          <h2>🔒 Access Denied</h2>
+          <p>Complete both SE and TE syllabus configuration before accessing lecture assignments.</p>
+          <p>Go to Syllabus tab and complete the required syllabuses.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="assign-theory-page">
+    <div className="lecture-page">
       <h1>Assign Teachers to Theory Subjects</h1>
 
-      <div style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
-        <label>
-          Year:
-          <select value={year} onChange={e => setYear(e.target.value)} style={{ marginLeft: 8 }}>
+      {/* Error/Success Messages */}
+      {errorMessage && (
+        <div style={{ 
+          color: 'red', 
+          backgroundColor: '#ffe6e6', 
+          padding: '10px', 
+          borderRadius: '5px', 
+          marginBottom: '10px',
+          border: '1px solid red'
+        }}>
+          ⚠️ {errorMessage}
+        </div>
+      )}
+      
+      {successMessage && (
+        <div style={{ 
+          color: 'green', 
+          backgroundColor: '#e6ffe6', 
+          padding: '10px', 
+          borderRadius: '5px', 
+          marginBottom: '10px',
+          border: '1px solid green'
+        }}>
+          {successMessage}
+        </div>
+      )}
+
+      {/* Year and Division Selection */}
+      <div style={{ marginBottom: '30px', display: 'flex', gap: '20px', alignItems: 'center' }}>
+        <div>
+          <label>Year: </label>
+          <select 
+            value={selectedYear} 
+            onChange={(e) => setSelectedYear(e.target.value)}
+            style={{ marginLeft: '10px', padding: '5px' }}
+          >
             <option value="SE">SE</option>
             <option value="TE">TE</option>
             <option value="BE">BE</option>
           </select>
-        </label>
-        <label>
-          Division:
-          <select value={division} onChange={e => setDivision(e.target.value)} style={{ marginLeft: 8 }}>
-            <option value="A">A</option>
-            <option value="B">B</option>
+        </div>
+        
+        <div>
+          <label>Division: </label>
+          <select 
+            value={selectedDivision} 
+            onChange={(e) => setSelectedDivision(e.target.value)}
+            style={{ marginLeft: '10px', padding: '5px' }}
+          >
+            {divisions.map(division => {
+              const divLetter = division.name.split('-')[1]; // SE-A -> A
+              return <option key={division._id} value={divLetter}>{divLetter}</option>;
+            })}
           </select>
-        </label>
+        </div>
       </div>
 
-      <table>
-        <thead>
-          <tr>
-            <th>Subject</th>
-            <th>Type</th>
-            <th>Hours/Week</th>
-            <th>Assign Teacher</th>
-          </tr>
-        </thead>
-        <tbody>
-          {subjects.length === 0 && (
-            <tr>
-              <td colSpan={4}>No theory subjects for {year} {division}.</td>
+      {/* Subjects Table */}
+      {subjects.length > 0 ? (
+        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '30px' }}>
+          <thead>
+            <tr style={{ backgroundColor: '#f8f9fa' }}>
+              <th style={{ border: '1px solid #dee2e6', padding: '12px' }}>Subject</th>
+              <th style={{ border: '1px solid #dee2e6', padding: '12px' }}>Type</th>
+              <th style={{ border: '1px solid #dee2e6', padding: '12px' }}>Hours/Week</th>
+              <th style={{ border: '1px solid #dee2e6', padding: '12px' }}>Assign Teacher</th>
             </tr>
-          )}
-          {subjects.map(sub => (
-            <tr key={sub._id}>
-              <td>{sub.name}</td>
-              <td>{sub.type}</td>
-              <td>{sub.hours}</td>
-              <td>
-                <select
-                  value={assignments[sub._id] || ''}
-                  onChange={e => handleAssign(sub._id, e.target.value)}
-                >
-                  <option value="">Select Teacher</option>
-                  {teachers.map(t => {
-                    const cur = teacherLoads[t._id] || 0;
-                    return (
-                      <option key={t._id} value={t._id}>
-                        {t.name} ({cur}/{t.maxWorkload})
+          </thead>
+          <tbody>
+            {subjects.map(subject => (
+              <tr key={subject._id}>
+                <td style={{ border: '1px solid #dee2e6', padding: '10px' }}>{subject.name}</td>
+                <td style={{ border: '1px solid #dee2e6', padding: '10px' }}>{subject.type}</td>
+                <td style={{ border: '1px solid #dee2e6', padding: '10px', textAlign: 'center' }}>{subject.hoursPerWeek}</td>
+                <td style={{ border: '1px solid #dee2e6', padding: '10px' }}>
+                  <select
+                    value={subject.assignedTeacher?._id || ''}
+                    onChange={(e) => handleTeacherAssignment(subject._id, e.target.value)}
+                    style={{ width: '100%', padding: '5px' }}
+                  >
+                    <option value="">Select Teacher</option>
+                    {teachers.map(teacher => (
+                      <option key={teacher._id} value={teacher._id}>
+                        {teacher.name} (ID: {teacher.teacherId})
                       </option>
-                    );
-                  })}
-                </select>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      {error && (
-        <div style={{ color: 'red', marginTop: 12 }}>
-          {error}
+                    ))}
+                  </select>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <div style={{ textAlign: 'center', color: '#6c757d', marginTop: '50px' }}>
+          <p>No theory subjects found for {selectedYear}-{selectedDivision}</p>
+          <p>Make sure you have completed the syllabus configuration for this year.</p>
         </div>
       )}
 
-      <div style={{ marginTop: 16 }}>
-        <button className="save-btn" onClick={handleSave}>Save</button>
-        <button className="clear-btn" onClick={handleClear} style={{ marginLeft: 8 }}>Clear</button>
-      </div>
-
-      <h3 style={{ marginTop: 24 }}>Teacher Workload Summary</h3>
-      <ul>
-        {teachers.map(t => (
-          <li key={t._id}>
-            {t.name}: {teacherLoads[t._id] || 0}/{t.maxWorkload} hours
-          </li>
-        ))}
-      </ul>
+      {/* Teacher Workload Summary */}
+      {teacherWorkload.length > 0 && (
+        <div>
+          <h3>Teacher Workload Summary</h3>
+          <ul style={{ listStyle: 'none', padding: 0 }}>
+            {teacherWorkload.map(teacher => (
+              <li key={teacher.teacherId} style={{ marginBottom: '5px' }}>
+                <strong>{teacher.name}:</strong> {teacher.currentHours}/{teacher.maxHours} hours
+                {teacher.availableHours <= 0 && (
+                  <span style={{ color: 'red', marginLeft: '10px' }}>⚠️ Fully loaded</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
-}
+};
+
+export default Lecture;

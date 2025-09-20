@@ -1,39 +1,28 @@
-// src/models/Syllabus.js
 const mongoose = require('mongoose');
 
-const syllabusSchema = new mongoose.Schema({
+const SyllabusSchema = new mongoose.Schema({
   academicYear: {
     type: String,
-    required: true
+    enum: ['SE', 'TE', 'BE'],
+    required: true,
+    unique: true
   },
-  numberOfDivisions: {
+  numDivisions: {
     type: Number,
-    required: true
+    required: true,
+    min: 1,
+    max: 10
   },
-  divisions: {
-    type: String,
-    required: false
-  },
-  subjects: [{  // ✅ FIXED: Define subjects as array of objects, NOT array of strings
-    name: {
-      type: String,
-      required: true
-    },
-    type: {
-      type: String,
-      required: true
-    },
-    credits: {
-      type: Number,
-      required: true
-    },
-    hoursPerWeek: {
-      type: Number,
-      required: true
-    }
-  }]
+  subjects: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Subject'
+  }],
+  isCompleted: {
+    type: Boolean,
+    default: false
+  }
 }, {
   timestamps: true
 });
 
-module.exports = mongoose.model('Syllabus', syllabusSchema);
+module.exports = mongoose.model('Syllabus', SyllabusSchema);
