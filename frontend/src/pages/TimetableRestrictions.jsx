@@ -2,110 +2,151 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
 const TimetableRestrictions = () => {
-  const [data, setData] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [successMessage, setSuccessMessage] = useState('');
-  const [showForm, setShowForm] = useState(false);
   const [activeTab, setActiveTab] = useState('time');
-  
-  const [newRestriction, setNewRestriction] = useState({
-    restrictionName: '',
-    type: 'time',
-    scope: 'global',
-    affectedYears: [],
-    startTime: '',
-    endTime: '',
-    days: [],
-    teacherName: '',
-    unavailableSlots: [],
-    subjectName: '',
-    blockedDays: [],
+  const [restrictions, setRestrictions] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+
+  // New restriction forms
+  const [newTimeRestriction, setNewTimeRestriction] = useState({
+    type: 'time-based',
+    name: '',
+    timeSlots: [],
+    days: ['All days'],
     priority: 3,
-    description: ''
+    scope: 'global'
   });
 
-  // Fetch restrictions
-  const fetchRestrictions = async () => {
-    try {
-      setLoading(true);
-      const response = await axios.get('http://localhost:5000/api/restrictions');
-      setData(response.data);
-      setLoading(false);
-    } catch (err) {
-      console.error('Error fetching restrictions:', err);
-      setError('Failed to fetch restrictions');
-      setLoading(false);
-    }
-  };
+  const [newTeacherRestriction, setNewTeacherRestriction] = useState({
+    type: 'teacher-based',
+    teacherName: '',
+    unavailableSlots: [],
+    days: ['All days'],
+    reason: '',
+    priority: 3
+  });
 
+  const [newSubjectRestriction, setNewSubjectRestriction] = useState({
+    type: 'subject-based',
+    subjectName: '',
+    restrictedDays: [],
+    allowedTimeSlots: [],
+    roomType: 'any',
+    priority: 3
+  });
+
+  // Load restrictions on component mount
   useEffect(() => {
     fetchRestrictions();
   }, []);
 
-  // Clear messages
+  // Auto-clear messages
   useEffect(() => {
-    if (error || successMessage) {
+    if (message || error) {
       const timer = setTimeout(() => {
+        setMessage('');
         setError('');
-        setSuccessMessage('');
       }, 5000);
       return () => clearTimeout(timer);
     }
-  }, [error, successMessage]);
+  }, [message, error]);
 
-  // Reset form when switching tabs
-  const switchTab = (type) => {
-    setActiveTab(type);
-    setNewRestriction(prev => ({
-      ...prev,
-      type,
-      restrictionName: '',
-      startTime: '',
-      endTime: '',
-      days: [],
-      teacherName: '',
-      unavailableSlots: [],
-      subjectName: '',
-      blockedDays: []
-    }));
+  const fetchRestrictions = async () => {
+    try {
+      setLoading(true);
+      const response = await axios.get('http://localhost:5000/api/restrictions');
+      setRestrictions(response.data);
+    } catch (err) {
+      console.error('Error fetching restrictions:', err);
+      setError('Failed to fetch restrictions');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // Add restriction
-  const addRestriction = async () => {
+  const addTimeRestriction = async () => {
     try {
-      const response = await axios.post('http://localhost:5000/api/restrictions', newRestriction);
-      setSuccessMessage(response.data.message);
-      setShowForm(false);
-      fetchRestrictions();
-      
-      // Reset form
-      setNewRestriction({
-        restrictionName: '',
-        type: activeTab,
-        scope: 'global',
-        affectedYears: [],
-        startTime: '',
-        endTime: '',
-        days: [],
-        teacherName: '',
-        unavailableSlots: [],
-        subjectName: '',
-        blockedDays: [],
+      if (!newTimeRestriction.name.trim()) {
+        setError('Restriction name is required');
+        return;
+      }
+      if (newTimeRestriction.timeSlots.length === 0) {
+        setError('Please select at least one time slot');
+        return;
+      }
+
+      await axios.post('http://localhost:5000/api/restrictions', newTimeRestriction);
+      setMessage('Time-based restriction added successfully');
+      setNewTimeRestriction({
+        type: 'time-based',
+        name: '',
+        timeSlots: [],
+        days: ['All days'],
         priority: 3,
-        description: ''
+        scope: 'global'
       });
+      fetchRestrictions();
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to add restriction');
     }
   };
 
-  // Remove restriction
+  const addTeacherRestriction = async () => {
+    try {
+      if (!newTeacherRestriction.teacherName.trim()) {
+        setError('Teacher name is required');
+        return;
+      }
+      if (newTeacherRestriction.unavailableSlots.length === 0) {
+        setError('Please select at least one unavailable slot');
+        return;
+      }
+
+      await axios.post('http://localhost:5000/api/restrictions', newTeacherRestriction);
+      setMessage('Teacher-based restriction added successfully');
+      setNewTeacherRestriction({
+        type: 'teacher-based',
+        teacherName: '',
+        unavailableSlots: [],
+        days: ['All days'],
+        reason: '',
+        priority: 3
+      });
+      fetchRestrictions();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to add restriction');
+    }
+  };
+
+  const addSubjectRestriction = async () => {
+    try {
+      if (!newSubjectRestriction.subjectName.trim()) {
+        setError('Subject name is required');
+        return;
+      }
+
+      await axios.post('http://localhost:5000/api/restrictions', newSubjectRestriction);
+      setMessage('Subject-based restriction added successfully');
+      setNewSubjectRestriction({
+        type: 'subject-based',
+        subjectName: '',
+        restrictedDays: [],
+        allowedTimeSlots: [],
+        roomType: 'any',
+        priority: 3
+      });
+      fetchRestrictions();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to add restriction');
+    }
+  };
+
   const removeRestriction = async (id, name) => {
-    if (window.confirm(`Are you sure you want to remove "${name}"?`)) {
+    if (window.confirm(`Are you sure you want to remove the restriction "${name}"?`)) {
       try {
-        const response = await axios.delete(`http://localhost:5000/api/restrictions/${id}`);
-        setSuccessMessage(response.data.message);
+        await axios.delete(`http://localhost:5000/api/restrictions/${id}`);
+        setMessage('Restriction removed successfully');
         fetchRestrictions();
       } catch (err) {
         setError('Failed to remove restriction');
@@ -113,55 +154,65 @@ const TimetableRestrictions = () => {
     }
   };
 
-  const handleDayToggle = (day) => {
-    setNewRestriction(prev => ({
-      ...prev,
-      days: prev.days.includes(day) 
-        ? prev.days.filter(d => d !== day)
-        : [...prev.days, day]
-    }));
+  const handleTimeSlotToggle = (slotNumber, restrictionType) => {
+    if (restrictionType === 'time') {
+      setNewTimeRestriction(prev => ({
+        ...prev,
+        timeSlots: prev.timeSlots.includes(slotNumber)
+          ? prev.timeSlots.filter(s => s !== slotNumber)
+          : [...prev.timeSlots, slotNumber]
+      }));
+    } else if (restrictionType === 'teacher') {
+      setNewTeacherRestriction(prev => ({
+        ...prev,
+        unavailableSlots: prev.unavailableSlots.includes(slotNumber)
+          ? prev.unavailableSlots.filter(s => s !== slotNumber)
+          : [...prev.unavailableSlots, slotNumber]
+      }));
+    } else if (restrictionType === 'subject') {
+      setNewSubjectRestriction(prev => ({
+        ...prev,
+        allowedTimeSlots: prev.allowedTimeSlots.includes(slotNumber)
+          ? prev.allowedTimeSlots.filter(s => s !== slotNumber)
+          : [...prev.allowedTimeSlots, slotNumber]
+      }));
+    }
   };
 
-  const handleYearToggle = (year) => {
-    setNewRestriction(prev => ({
-      ...prev,
-      affectedYears: prev.affectedYears.includes(year)
-        ? prev.affectedYears.filter(y => y !== year)
-        : [...prev.affectedYears, year]
-    }));
+  const handleDayToggle = (day, restrictionType) => {
+    if (restrictionType === 'time') {
+      setNewTimeRestriction(prev => ({
+        ...prev,
+        days: prev.days.includes(day)
+          ? prev.days.filter(d => d !== day)
+          : [...prev.days, day]
+      }));
+    } else if (restrictionType === 'teacher') {
+      setNewTeacherRestriction(prev => ({
+        ...prev,
+        days: prev.days.includes(day)
+          ? prev.days.filter(d => d !== day)
+          : [...prev.days, day]
+      }));
+    } else if (restrictionType === 'subject') {
+      setNewSubjectRestriction(prev => ({
+        ...prev,
+        restrictedDays: prev.restrictedDays.includes(day)
+          ? prev.restrictedDays.filter(d => d !== day)
+          : [...prev.restrictedDays, day]
+      }));
+    }
   };
-
-  const handleBlockedDayToggle = (day) => {
-    setNewRestriction(prev => ({
-      ...prev,
-      blockedDays: prev.blockedDays.includes(day) 
-        ? prev.blockedDays.filter(d => d !== day)
-        : [...prev.blockedDays, day]
-    }));
-  };
-
-  if (loading) {
-    return (
-      <div style={{ padding: '20px' }}>
-        <h1>🚫 Timetable Restrictions</h1>
-        <div style={{ textAlign: 'center', padding: '40px' }}>
-          <div style={{ fontSize: '18px', color: '#6c757d' }}>🔄 Loading...</div>
-        </div>
-      </div>
-    );
-  }
-
-  const currentRestrictions = data.grouped?.[activeTab] || [];
 
   return (
     <div style={{ padding: '20px', maxWidth: '1400px', margin: '0 auto' }}>
       {/* Header */}
       <div style={{ marginBottom: '30px' }}>
         <h1 style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-          🚫 Smart Timetable Restrictions Manager
+          🚫 Timetable Restrictions
         </h1>
         <p style={{ color: '#6c757d', fontSize: '16px' }}>
-          Configure intelligent restrictions for automated timetable generation
+          Configure time-based, teacher-based, and subject-based restrictions for intelligent timetable generation
         </p>
       </div>
 
@@ -178,8 +229,8 @@ const TimetableRestrictions = () => {
           ❌ {error}
         </div>
       )}
-      
-      {successMessage && (
+
+      {message && (
         <div style={{ 
           color: '#2e7d32', 
           backgroundColor: '#e8f5e8', 
@@ -188,7 +239,7 @@ const TimetableRestrictions = () => {
           marginBottom: '20px',
           border: '1px solid #4caf50'
         }}>
-          ✅ {successMessage}
+          ✅ {message}
         </div>
       )}
 
@@ -200,17 +251,18 @@ const TimetableRestrictions = () => {
         gap: '8px'
       }}>
         {[
-          { id: 'time', label: 'Time-Based', icon: '🕐' },
-          { id: 'teacher', label: 'Teacher-Based', icon: '👨‍🏫' },
-          { id: 'subject', label: 'Subject-Based', icon: '📚' }
+          { id: 'time', label: 'Time-based', icon: '⏰' },
+          { id: 'teacher', label: 'Teacher-based', icon: '👨‍🏫' },
+          { id: 'subject', label: 'Subject-based', icon: '📚' },
+          { id: 'view', label: 'View All', icon: '📋' }
         ].map(tab => (
           <button
             key={tab.id}
-            onClick={() => switchTab(tab.id)}
+            onClick={() => setActiveTab(tab.id)}
             style={{
               padding: '12px 24px',
               border: 'none',
-              backgroundColor: activeTab === tab.id ? '#007bff' : 'transparent',
+              backgroundColor: activeTab === tab.id ? '#dc3545' : 'transparent',
               color: activeTab === tab.id ? 'white' : '#6c757d',
               borderRadius: '8px 8px 0 0',
               cursor: 'pointer',
@@ -222,496 +274,429 @@ const TimetableRestrictions = () => {
               transition: 'all 0.2s'
             }}
           >
-            {tab.icon} {tab.label} ({data.counts?.[tab.id] || 0})
+            {tab.icon} {tab.label}
           </button>
         ))}
       </div>
 
-      {/* Add Button */}
-      <div style={{ marginBottom: '30px' }}>
-        <button
-          onClick={() => {
-            setNewRestriction(prev => ({ ...prev, type: activeTab }));
-            setShowForm(!showForm);
-          }}
-          style={{
-            backgroundColor: showForm ? '#6c757d' : '#28a745',
-            color: 'white',
-            border: 'none',
-            padding: '12px 24px',
-            borderRadius: '8px',
-            cursor: 'pointer',
-            fontSize: '16px',
-            fontWeight: '600',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px'
-          }}
-        >
-          {showForm ? '❌ Cancel' : `➕ Add ${activeTab} Restriction`}
-        </button>
-      </div>
-
-      {/* Add Form */}
-      {showForm && (
-        <div style={{
-          backgroundColor: '#f8f9fa',
-          padding: '30px',
-          borderRadius: '12px',
-          border: '1px solid #dee2e6',
-          marginBottom: '30px'
-        }}>
-          <h3 style={{ marginBottom: '24px', color: '#495057' }}>
-            ➕ Add New {activeTab} Restriction
-          </h3>
+      {/* TIME-BASED RESTRICTIONS */}
+      {activeTab === 'time' && (
+        <div>
+          <h2 style={{ marginBottom: '24px' }}>⏰ Time-based Restrictions</h2>
+          <p style={{ color: '#6c757d', marginBottom: '24px' }}>
+            Block specific time slots for breaks, assemblies, or other fixed activities.
+          </p>
           
-          {/* Basic Fields */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px', marginBottom: '24px' }}>
-            <div>
-              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#495057' }}>
-                Restriction Name *
-              </label>
-              <input
-                type="text"
-                value={newRestriction.restrictionName}
-                onChange={(e) => setNewRestriction(prev => ({ ...prev, restrictionName: e.target.value }))}
-                placeholder={
-                  activeTab === 'time' ? 'e.g., Morning Recess, Lunch Break' :
-                  activeTab === 'teacher' ? 'e.g., Prof. Smith Unavailable' :
-                  'e.g., Physics Lab Restriction'
-                }
-                style={{
-                  width: '100%',
-                  padding: '12px',
-                  border: '2px solid #e9ecef',
-                  borderRadius: '6px',
-                  fontSize: '14px'
-                }}
-              />
+          <div style={{
+            backgroundColor: '#f8f9fa',
+            padding: '24px',
+            borderRadius: '12px',
+            marginBottom: '30px'
+          }}>
+            <h3 style={{ marginBottom: '16px' }}>Add Time-based Restriction</h3>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '4px', fontWeight: '600' }}>Restriction Name</label>
+                <input
+                  type="text"
+                  value={newTimeRestriction.name}
+                  onChange={(e) => setNewTimeRestriction(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="e.g., Morning Recess, Lunch Break"
+                  style={{ width: '100%', padding: '12px', border: '1px solid #ddd', borderRadius: '4px' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '4px', fontWeight: '600' }}>Priority (1-5)</label>
+                <select
+                  value={newTimeRestriction.priority}
+                  onChange={(e) => setNewTimeRestriction(prev => ({ ...prev, priority: parseInt(e.target.value) }))}
+                  style={{ width: '100%', padding: '12px', border: '1px solid #ddd', borderRadius: '4px' }}
+                >
+                  <option value={1}>1 - Lowest</option>
+                  <option value={2}>2 - Low</option>
+                  <option value={3}>3 - Medium</option>
+                  <option value={4}>4 - High</option>
+                  <option value={5}>5 - Highest</option>
+                </select>
+              </div>
             </div>
 
-            <div>
-              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#495057' }}>
-                Scope *
-              </label>
-              <select
-                value={newRestriction.scope}
-                onChange={(e) => setNewRestriction(prev => ({ ...prev, scope: e.target.value, affectedYears: [] }))}
-                style={{
-                  width: '100%',
-                  padding: '12px',
-                  border: '2px solid #e9ecef',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  backgroundColor: 'white'
-                }}
-              >
-                <option value="global">🌐 Global (All Years)</option>
-                <option value="year-specific">🎯 Year-Specific</option>
-              </select>
-            </div>
-
-            <div>
-              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#495057' }}>
-                Priority
-              </label>
-              <select
-                value={newRestriction.priority}
-                onChange={(e) => setNewRestriction(prev => ({ ...prev, priority: parseInt(e.target.value) }))}
-                style={{
-                  width: '100%',
-                  padding: '12px',
-                  border: '2px solid #e9ecef',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  backgroundColor: 'white'
-                }}
-              >
-                <option value={1}>1 - Low Priority</option>
-                <option value={2}>2 - Low-Medium</option>
-                <option value={3}>3 - Medium</option>
-                <option value={4}>4 - High</option>
-                <option value={5}>5 - Critical</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Year Selection for year-specific */}
-          {newRestriction.scope === 'year-specific' && (
-            <div style={{ marginBottom: '24px' }}>
-              <label style={{ display: 'block', marginBottom: '12px', fontWeight: '600', color: '#495057' }}>
-                Affected Years *
-              </label>
-              <div style={{ 
-                display: 'flex',
-                gap: '16px',
-                padding: '16px',
-                backgroundColor: 'white',
-                borderRadius: '8px',
-                border: '2px solid #e9ecef'
-              }}>
-                {['2nd Year', '3rd Year', '4th Year'].map(year => (
-                  <label key={year} style={{ 
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>Time Slots to Block</label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '8px' }}>
+                {[1, 2, 3, 4, 5, 6, 7, 8].map(slot => (
+                  <label key={slot} style={{ 
                     display: 'flex', 
                     alignItems: 'center', 
-                    cursor: 'pointer',
-                    fontSize: '14px',
-                    fontWeight: '500',
-                    padding: '8px',
+                    padding: '8px 12px',
+                    border: '1px solid #ddd',
                     borderRadius: '4px',
-                    backgroundColor: newRestriction.affectedYears.includes(year) ? '#fff3cd' : 'transparent'
+                    cursor: 'pointer',
+                    backgroundColor: newTimeRestriction.timeSlots.includes(slot) ? '#e3f2fd' : 'white'
                   }}>
                     <input
                       type="checkbox"
-                      checked={newRestriction.affectedYears.includes(year)}
-                      onChange={() => handleYearToggle(year)}
-                      style={{ marginRight: '8px' }}
+                      checked={newTimeRestriction.timeSlots.includes(slot)}
+                      onChange={() => handleTimeSlotToggle(slot, 'time')}
+                      style={{ marginRight: '6px' }}
                     />
-                    {year}
+                    Slot {slot}
                   </label>
                 ))}
               </div>
             </div>
-          )}
 
-          {/* TIME-BASED FIELDS */}
-          {activeTab === 'time' && (
-            <>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '24px' }}>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#495057' }}>
-                    Start Time *
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>Days</label>
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                {['All days', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].map(day => (
+                  <label key={day} style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    padding: '4px 8px',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    backgroundColor: newTimeRestriction.days.includes(day) ? '#e3f2fd' : 'white'
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={newTimeRestriction.days.includes(day)}
+                      onChange={() => handleDayToggle(day, 'time')}
+                      style={{ marginRight: '5px' }}
+                    />
+                    {day}
                   </label>
-                  <input
-                    type="text"
-                    value={newRestriction.startTime}
-                    onChange={(e) => setNewRestriction(prev => ({ ...prev, startTime: e.target.value }))}
-                    placeholder="09:00 AM"
-                    style={{
-                      width: '100%',
-                      padding: '12px',
-                      border: '2px solid #e9ecef',
-                      borderRadius: '6px',
-                      fontSize: '14px'
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#495057' }}>
-                    End Time *
-                  </label>
-                  <input
-                    type="text"
-                    value={newRestriction.endTime}
-                    onChange={(e) => setNewRestriction(prev => ({ ...prev, endTime: e.target.value }))}
-                    placeholder="10:00 AM"
-                    style={{
-                      width: '100%',
-                      padding: '12px',
-                      border: '2px solid #e9ecef',
-                      borderRadius: '6px',
-                      fontSize: '14px'
-                    }}
-                  />
-                </div>
+                ))}
               </div>
-
-              <div style={{ marginBottom: '24px' }}>
-                <label style={{ display: 'block', marginBottom: '12px', fontWeight: '600', color: '#495057' }}>
-                  Days *
-                </label>
-                <div style={{ 
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-                  gap: '12px',
-                  padding: '16px',
-                  backgroundColor: 'white',
-                  borderRadius: '8px',
-                  border: '2px solid #e9ecef'
-                }}>
-                  {['All days', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map(day => (
-                    <label key={day} style={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      cursor: 'pointer',
-                      fontSize: '14px',
-                      fontWeight: '500',
-                      padding: '8px',
-                      borderRadius: '4px',
-                      backgroundColor: newRestriction.days.includes(day) ? '#e3f2fd' : 'transparent'
-                    }}>
-                      <input
-                        type="checkbox"
-                        checked={newRestriction.days.includes(day)}
-                        onChange={() => handleDayToggle(day)}
-                        style={{ marginRight: '8px' }}
-                      />
-                      {day}
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* TEACHER-BASED FIELDS */}
-          {activeTab === 'teacher' && (
-            <div style={{ marginBottom: '24px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#495057' }}>
-                Teacher Name *
-              </label>
-              <input
-                type="text"
-                value={newRestriction.teacherName}
-                onChange={(e) => setNewRestriction(prev => ({ ...prev, teacherName: e.target.value }))}
-                placeholder="Prof. John Smith"
-                style={{
-                  width: '100%',
-                  padding: '12px',
-                  border: '2px solid #e9ecef',
-                  borderRadius: '6px',
-                  fontSize: '14px'
-                }}
-              />
             </div>
-          )}
 
-          {/* SUBJECT-BASED FIELDS */}
-          {activeTab === 'subject' && (
-            <>
-              <div style={{ marginBottom: '24px' }}>
-                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#495057' }}>
-                  Subject Name *
-                </label>
-                <input
-                  type="text"
-                  value={newRestriction.subjectName}
-                  onChange={(e) => setNewRestriction(prev => ({ ...prev, subjectName: e.target.value }))}
-                  placeholder="Physics, Mathematics, etc."
-                  style={{
-                    width: '100%',
-                    padding: '12px',
-                    border: '2px solid #e9ecef',
-                    borderRadius: '6px',
-                    fontSize: '14px'
-                  }}
-                />
-              </div>
-
-              <div style={{ marginBottom: '24px' }}>
-                <label style={{ display: 'block', marginBottom: '12px', fontWeight: '600', color: '#495057' }}>
-                  Blocked Days (Subject cannot be scheduled on these days)
-                </label>
-                <div style={{ 
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-                  gap: '12px',
-                  padding: '16px',
-                  backgroundColor: 'white',
-                  borderRadius: '8px',
-                  border: '2px solid #e9ecef'
-                }}>
-                  {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map(day => (
-                    <label key={day} style={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      cursor: 'pointer',
-                      fontSize: '14px',
-                      fontWeight: '500',
-                      padding: '8px',
-                      borderRadius: '4px',
-                      backgroundColor: newRestriction.blockedDays.includes(day) ? '#ffebee' : 'transparent'
-                    }}>
-                      <input
-                        type="checkbox"
-                        checked={newRestriction.blockedDays.includes(day)}
-                        onChange={() => handleBlockedDayToggle(day)}
-                        style={{ marginRight: '8px' }}
-                      />
-                      {day}
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* Description */}
-          <div style={{ marginBottom: '24px' }}>
-            <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: '#495057' }}>
-              Description (Optional)
-            </label>
-            <textarea
-              value={newRestriction.description}
-              onChange={(e) => setNewRestriction(prev => ({ ...prev, description: e.target.value }))}
-              placeholder="Additional notes about this restriction..."
-              rows={3}
+            <button
+              onClick={addTimeRestriction}
               style={{
-                width: '100%',
-                padding: '12px',
-                border: '2px solid #e9ecef',
+                backgroundColor: '#dc3545',
+                color: 'white',
+                border: 'none',
+                padding: '12px 24px',
                 borderRadius: '6px',
-                fontSize: '14px',
-                resize: 'vertical'
+                cursor: 'pointer',
+                fontSize: '16px',
+                fontWeight: '600'
               }}
-            />
+            >
+              🚫 Add Time Restriction
+            </button>
           </div>
-
-          {/* Add Button */}
-          <button
-            onClick={addRestriction}
-            style={{
-              backgroundColor: '#28a745',
-              color: 'white',
-              border: 'none',
-              padding: '14px 28px',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              fontSize: '16px',
-              fontWeight: '600',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px'
-            }}
-          >
-            ➕ Add {activeTab} Restriction
-          </button>
         </div>
       )}
 
-      {/* Current Restrictions Display */}
-      <div>
-        <h2 style={{ marginBottom: '20px', color: '#495057' }}>
-          📋 Current {activeTab} Restrictions ({currentRestrictions.length})
-        </h2>
-        
-        {currentRestrictions.length === 0 ? (
+      {/* TEACHER-BASED RESTRICTIONS */}
+      {activeTab === 'teacher' && (
+        <div>
+          <h2 style={{ marginBottom: '24px' }}>👨‍🏫 Teacher-based Restrictions</h2>
+          <p style={{ color: '#6c757d', marginBottom: '24px' }}>
+            Define teacher unavailability periods for meetings, other commitments, or personal schedules.
+          </p>
+          
           <div style={{
-            textAlign: 'center',
-            padding: '60px 20px',
             backgroundColor: '#f8f9fa',
+            padding: '24px',
             borderRadius: '12px',
-            border: '2px dashed #dee2e6'
+            marginBottom: '30px'
           }}>
-            <div style={{ fontSize: '48px', marginBottom: '16px' }}>
-              {activeTab === 'time' ? '🕐' : activeTab === 'teacher' ? '👨‍🏫' : '📚'}
-            </div>
-            <p style={{ color: '#6c757d', fontSize: '18px', margin: '0 0 8px 0' }}>
-              No {activeTab} restrictions configured yet
-            </p>
-            <p style={{ color: '#6c757d', fontSize: '14px', margin: '0' }}>
-              Add restrictions to control timetable generation
-            </p>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {currentRestrictions.map((restriction) => (
-              <div key={restriction._id} style={{
-                backgroundColor: 'white',
-                padding: '24px',
-                borderRadius: '12px',
-                border: '1px solid #dee2e6',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-                  <div style={{ flex: 1 }}>
-                    <h3 style={{ margin: '0 0 12px 0', color: '#495057', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      {activeTab === 'time' ? '🕐' : activeTab === 'teacher' ? '👨‍🏫' : '📚'} 
-                      {restriction.restrictionName}
-                    </h3>
-                    
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', fontSize: '14px', marginBottom: '12px' }}>
-                      <span style={{
-                        backgroundColor: restriction.scope === 'global' ? '#e3f2fd' : '#fff3cd',
-                        color: restriction.scope === 'global' ? '#1976d2' : '#f57c00',
-                        padding: '4px 8px',
-                        borderRadius: '12px',
-                        fontSize: '12px',
-                        fontWeight: '600'
-                      }}>
-                        {restriction.scope === 'global' ? 'GLOBAL' : 'YEAR-SPECIFIC'}
-                      </span>
-                      
-                      <span style={{
-                        backgroundColor: 
-                          restriction.priority <= 2 ? '#6c757d' :
-                          restriction.priority === 3 ? '#ffc107' :
-                          restriction.priority === 4 ? '#fd7e14' : '#dc3545',
-                        color: 'white',
-                        padding: '4px 8px',
-                        borderRadius: '12px',
-                        fontSize: '12px',
-                        fontWeight: '600'
-                      }}>
-                        PRIORITY {restriction.priority}
-                      </span>
-                    </div>
-
-                    {/* Type-specific details */}
-                    <div style={{ fontSize: '14px', color: '#6c757d', marginBottom: '8px' }}>
-                      {activeTab === 'time' && (
-                        <div>
-                          <strong>Time:</strong> {restriction.startTime} - {restriction.endTime} | 
-                          <strong> Days:</strong> {restriction.days?.join(', ') || 'None'}
-                        </div>
-                      )}
-                      
-                      {activeTab === 'teacher' && (
-                        <div>
-                          <strong>Teacher:</strong> {restriction.teacherName}
-                          {restriction.unavailableSlots?.length > 0 && (
-                            <span> | <strong>Unavailable Slots:</strong> {restriction.unavailableSlots.length}</span>
-                          )}
-                        </div>
-                      )}
-                      
-                      {activeTab === 'subject' && (
-                        <div>
-                          <strong>Subject:</strong> {restriction.subjectName}
-                          {restriction.blockedDays?.length > 0 && (
-                            <span> | <strong>Blocked Days:</strong> {restriction.blockedDays.join(', ')}</span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    <div style={{ fontSize: '14px', color: '#6c757d' }}>
-                      <strong>Affects:</strong> {
-                        restriction.scope === 'global' 
-                          ? 'All Years' 
-                          : restriction.affectedYears?.join(', ') || 'None'
-                      }
-                      {restriction.description && (
-                        <>
-                          {' | '}<strong>Note:</strong> {restriction.description}
-                        </>
-                      )}
-                    </div>
-                  </div>
-                  
-                  <button
-                    onClick={() => removeRestriction(restriction._id, restriction.restrictionName)}
-                    style={{
-                      backgroundColor: '#dc3545',
-                      color: 'white',
-                      border: 'none',
-                      padding: '8px 16px',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                      fontWeight: '600',
-                      marginLeft: '16px'
-                    }}
-                  >
-                    🗑️ Remove
-                  </button>
-                </div>
+            <h3 style={{ marginBottom: '16px' }}>Add Teacher-based Restriction</h3>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '4px', fontWeight: '600' }}>Teacher Name</label>
+                <input
+                  type="text"
+                  value={newTeacherRestriction.teacherName}
+                  onChange={(e) => setNewTeacherRestriction(prev => ({ ...prev, teacherName: e.target.value }))}
+                  placeholder="Enter teacher name"
+                  style={{ width: '100%', padding: '12px', border: '1px solid #ddd', borderRadius: '4px' }}
+                />
               </div>
-            ))}
+              <div>
+                <label style={{ display: 'block', marginBottom: '4px', fontWeight: '600' }}>Reason</label>
+                <input
+                  type="text"
+                  value={newTeacherRestriction.reason}
+                  onChange={(e) => setNewTeacherRestriction(prev => ({ ...prev, reason: e.target.value }))}
+                  placeholder="e.g., Meeting, Personal work"
+                  style={{ width: '100%', padding: '12px', border: '1px solid #ddd', borderRadius: '4px' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>Unavailable Time Slots</label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '8px' }}>
+                {[1, 2, 3, 4, 5, 6, 7, 8].map(slot => (
+                  <label key={slot} style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    padding: '8px 12px',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    backgroundColor: newTeacherRestriction.unavailableSlots.includes(slot) ? '#ffe3e3' : 'white'
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={newTeacherRestriction.unavailableSlots.includes(slot)}
+                      onChange={() => handleTimeSlotToggle(slot, 'teacher')}
+                      style={{ marginRight: '6px' }}
+                    />
+                    Slot {slot}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>Days</label>
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                {['All days', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].map(day => (
+                  <label key={day} style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    padding: '4px 8px',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    backgroundColor: newTeacherRestriction.days.includes(day) ? '#ffe3e3' : 'white'
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={newTeacherRestriction.days.includes(day)}
+                      onChange={() => handleDayToggle(day, 'teacher')}
+                      style={{ marginRight: '5px' }}
+                    />
+                    {day}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <button
+              onClick={addTeacherRestriction}
+              style={{
+                backgroundColor: '#fd7e14',
+                color: 'white',
+                border: 'none',
+                padding: '12px 24px',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '16px',
+                fontWeight: '600'
+              }}
+            >
+              👨‍🏫 Add Teacher Restriction
+            </button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {/* SUBJECT-BASED RESTRICTIONS */}
+      {activeTab === 'subject' && (
+        <div>
+          <h2 style={{ marginBottom: '24px' }}>📚 Subject-based Restrictions</h2>
+          <p style={{ color: '#6c757d', marginBottom: '24px' }}>
+            Configure subject-specific constraints like lab requirements, preferred time slots, or day restrictions.
+          </p>
+          
+          <div style={{
+            backgroundColor: '#f8f9fa',
+            padding: '24px',
+            borderRadius: '12px',
+            marginBottom: '30px'
+          }}>
+            <h3 style={{ marginBottom: '16px' }}>Add Subject-based Restriction</h3>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '4px', fontWeight: '600' }}>Subject Name</label>
+                <input
+                  type="text"
+                  value={newSubjectRestriction.subjectName}
+                  onChange={(e) => setNewSubjectRestriction(prev => ({ ...prev, subjectName: e.target.value }))}
+                  placeholder="e.g., Physics Lab, Mathematics"
+                  style={{ width: '100%', padding: '12px', border: '1px solid #ddd', borderRadius: '4px' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '4px', fontWeight: '600' }}>Room Type Requirement</label>
+                <select
+                  value={newSubjectRestriction.roomType}
+                  onChange={(e) => setNewSubjectRestriction(prev => ({ ...prev, roomType: e.target.value }))}
+                  style={{ width: '100%', padding: '12px', border: '1px solid #ddd', borderRadius: '4px' }}
+                >
+                  <option value="any">Any Room</option>
+                  <option value="CR">Classroom Only</option>
+                  <option value="LAB">Laboratory Only</option>
+                </select>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>Preferred Time Slots</label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '8px' }}>
+                {[1, 2, 3, 4, 5, 6, 7, 8].map(slot => (
+                  <label key={slot} style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    padding: '8px 12px',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    backgroundColor: newSubjectRestriction.allowedTimeSlots.includes(slot) ? '#e8f5e8' : 'white'
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={newSubjectRestriction.allowedTimeSlots.includes(slot)}
+                      onChange={() => handleTimeSlotToggle(slot, 'subject')}
+                      style={{ marginRight: '6px' }}
+                    />
+                    Slot {slot}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>Restricted Days</label>
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].map(day => (
+                  <label key={day} style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    padding: '4px 8px',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    backgroundColor: newSubjectRestriction.restrictedDays.includes(day) ? '#ffe8e8' : 'white'
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={newSubjectRestriction.restrictedDays.includes(day)}
+                      onChange={() => handleDayToggle(day, 'subject')}
+                      style={{ marginRight: '5px' }}
+                    />
+                    {day}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <button
+              onClick={addSubjectRestriction}
+              style={{
+                backgroundColor: '#20c997',
+                color: 'white',
+                border: 'none',
+                padding: '12px 24px',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '16px',
+                fontWeight: '600'
+              }}
+            >
+              📚 Add Subject Restriction
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* VIEW ALL RESTRICTIONS */}
+      {activeTab === 'view' && (
+        <div>
+          <h2 style={{ marginBottom: '24px' }}>📋 All Restrictions</h2>
+          
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: '40px', color: '#6c757d' }}>
+              Loading restrictions...
+            </div>
+          ) : restrictions.length === 0 ? (
+            <div style={{ 
+              textAlign: 'center', 
+              padding: '40px', 
+              backgroundColor: '#f8f9fa', 
+              borderRadius: '8px',
+              color: '#6c757d'
+            }}>
+              <div style={{ fontSize: '48px', marginBottom: '16px' }}>🚫</div>
+              <p>No restrictions configured yet. Add some restrictions using the tabs above!</p>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {restrictions.map((restriction, index) => (
+                <div key={restriction._id || index} style={{
+                  backgroundColor: 'white',
+                  padding: '20px',
+                  borderRadius: '12px',
+                  border: '1px solid #dee2e6',
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+                    <div style={{ flex: 1 }}>
+                      <h4 style={{ 
+                        margin: '0 0 8px 0', 
+                        fontSize: '18px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px'
+                      }}>
+                        {restriction.type === 'time-based' ? '⏰' : 
+                         restriction.type === 'teacher-based' ? '👨‍🏫' : '📚'} 
+                        {restriction.name || restriction.teacherName || restriction.subjectName}
+                      </h4>
+                      <div style={{ color: '#6c757d', fontSize: '14px' }}>
+                        <div><strong>Type:</strong> {restriction.type.replace('-', ' ').toUpperCase()}</div>
+                        <div><strong>Priority:</strong> {restriction.priority}/5</div>
+                        {restriction.days && (
+                          <div><strong>Days:</strong> {restriction.days.join(', ')}</div>
+                        )}
+                        {restriction.timeSlots && (
+                          <div><strong>Time Slots:</strong> {restriction.timeSlots.join(', ')}</div>
+                        )}
+                        {restriction.unavailableSlots && (
+                          <div><strong>Unavailable Slots:</strong> {restriction.unavailableSlots.join(', ')}</div>
+                        )}
+                        {restriction.reason && (
+                          <div><strong>Reason:</strong> {restriction.reason}</div>
+                        )}
+                        {restriction.roomType && restriction.roomType !== 'any' && (
+                          <div><strong>Room Type:</strong> {restriction.roomType}</div>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => removeRestriction(
+                        restriction._id, 
+                        restriction.name || restriction.teacherName || restriction.subjectName
+                      )}
+                      style={{
+                        backgroundColor: '#dc3545',
+                        color: 'white',
+                        border: 'none',
+                        padding: '6px 12px',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '12px'
+                      }}
+                      title="Remove restriction"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

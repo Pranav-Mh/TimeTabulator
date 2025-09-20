@@ -86,8 +86,6 @@ const recalculateTimeSlots = (baseSlots, fixedBookings, startTime) => {
   return adjustedSlots;
 };
 
-// EXISTING ROUTES (keep all your current routes)
-
 // Get all resources
 router.get('/rooms', async (req, res) => {
   try {
@@ -450,11 +448,9 @@ router.delete('/timeslots/booking/:slotNumber', async (req, res) => {
   }
 });
 
-// Get slot availability for timetable generation
-router.get('/slots/availability/:day?', async (req, res) => {
+// 🔧 FIXED: Get slot availability for all slots (no day parameter)
+router.get('/slots/availability', async (req, res) => {
   try {
-    const { day } = req.params; // Optional day filter
-    
     const config = await TimeSlotConfiguration.findOne();
     if (!config) {
       return res.status(404).json({ error: 'Time slot configuration not found' });
@@ -498,23 +494,6 @@ router.get('/slots/availability/:day?', async (req, res) => {
       };
     });
     
-    // Filter by specific day if provided
-    if (day) {
-      const dayAvailability = slotAvailability.map(slot => ({
-        ...slot,
-        isAvailableThisDay: slot.availableDays.includes(day),
-        blockingReason: slot.blockedDays.find(b => b.day === day)?.reason || null
-      }));
-      
-      return res.json({
-        day,
-        slots: dayAvailability,
-        availableCount: dayAvailability.filter(s => s.isAvailableThisDay).length,
-        blockedCount: dayAvailability.filter(s => !s.isAvailableThisDay).length,
-        message: `Slot availability for ${day}`
-      });
-    }
-    
     res.json({
       allSlots: slotAvailability,
       summary: {
@@ -524,6 +503,74 @@ router.get('/slots/availability/:day?', async (req, res) => {
         fullyBlockedSlots: slotAvailability.filter(s => s.availableDays.length === 0).length
       },
       message: 'Complete slot availability analysis'
+    });
+    
+  } catch (err) {
+    console.error('❌ Error getting slot availability:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 🔧 FIXED: Get slot availability for specific day
+router.get('/slots/availability/:day', async (req, res) => {
+  try {
+    const { day } = req.params;
+    
+    const config = await TimeSlotConfiguration.findOne();
+    if (!config) {
+      return res.status(404).json({ error: 'Time slot configuration not found' });
+    }
+    
+    const slotAvailability = config.timeSlots.map(slot => {
+      const blockedDays = [];
+      const availableDays = [];
+      
+      const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+      
+      for (const dayName of days) {
+        const hasFixedBooking = config.fixedBookings.some(booking => 
+          booking.slotNumber === slot.slotNumber &&
+          (booking.days.includes('All days') || booking.days.includes(dayName))
+        );
+        
+        if (hasFixedBooking) {
+          const booking = config.fixedBookings.find(b => 
+            b.slotNumber === slot.slotNumber &&
+            (b.days.includes('All days') || b.days.includes(dayName))
+          );
+          blockedDays.push({
+            day: dayName,
+            reason: booking.slotName,
+            duration: booking.durationMinutes
+          });
+        } else {
+          availableDays.push(dayName);
+        }
+      }
+      
+      return {
+        slotNumber: slot.slotNumber,
+        startTime: slot.adjustedStartTime,
+        endTime: slot.adjustedEndTime,
+        availableDays,
+        blockedDays,
+        isFullyAvailable: blockedDays.length === 0,
+        availabilityPercentage: (availableDays.length / days.length) * 100
+      };
+    });
+
+    const dayAvailability = slotAvailability.map(slot => ({
+      ...slot,
+      isAvailableThisDay: slot.availableDays.includes(day),
+      blockingReason: slot.blockedDays.find(b => b.day === day)?.reason || null
+    }));
+    
+    res.json({
+      day,
+      slots: dayAvailability,
+      availableCount: dayAvailability.filter(s => s.isAvailableThisDay).length,
+      blockedCount: dayAvailability.filter(s => !s.isAvailableThisDay).length,
+      message: `Slot availability for ${day}`
     });
     
   } catch (err) {
@@ -588,6 +635,7 @@ router.get('/slots/available/:day', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 // ENHANCED: Add fixed booking with exact time support and conflict detection
 router.post('/timeslots/booking-enhanced', async (req, res) => {
   try {
@@ -799,6 +847,5 @@ router.post('/timeslots/check-conflicts', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 
 module.exports = router;

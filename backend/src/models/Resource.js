@@ -4,8 +4,8 @@ const ResourceSchema = new mongoose.Schema({
   roomName: {
     type: String,
     required: true,
-    trim: true,
-    unique: true
+    unique: true,
+    trim: true
   },
   type: {
     type: String,
@@ -14,12 +14,21 @@ const ResourceSchema = new mongoose.Schema({
   },
   capacity: {
     type: Number,
-    default: 60
+    default: 60,
+    min: 1,
+    max: 200
   },
   isActive: {
     type: Boolean,
     default: true
-  }
+  },
+  location: {
+    type: String,
+    default: ''
+  },
+  equipment: [{
+    type: String
+  }]
 }, {
   timestamps: true
 });

@@ -4,15 +4,14 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 
-// Enhanced page imports from merged work
 import Dashboard from './pages/Dashboard';
 import Syllabus from './pages/Syllabus';
 import Lecture from './pages/Lecture';
 import Teachers from './pages/Teachers';
-import ConfigureResources from './pages/ConfigureResources'; // Note: not ConfigureResourcesPage
+import ConfigureResources from './pages/ConfigureResources';
 import Lab from './pages/Lab';
-import Generator from './pages/Generator'; // From merged work
-import TimetableRestrictions from './pages/TimetableRestrictions'; // Your addition
+import Generator from './pages/Generator'; // NEW
+import TimetableRestrictions from './pages/TimetableRestrictions';
 
 import './index.css';
 

@@ -16,6 +16,7 @@ const configRoutes = require('./routes/config');
 const resourcesRoutes = require('./routes/resources');
 const navigationRoutes = require('./routes/navigation');
 const restrictionsRoutes = require('./routes/restrictions');
+const timetableRoutes = require('./routes/timetable'); // NEW
 
 // Route usage
 app.use('/api/teachers', teacherRoutes);
@@ -26,5 +27,6 @@ app.use('/api/config', configRoutes);
 app.use('/api/resources', resourcesRoutes);
 app.use('/api/navigation', navigationRoutes);
 app.use('/api/restrictions', restrictionsRoutes);
+app.use('/api/timetable', timetableRoutes); // NEW
 
 module.exports = app;
