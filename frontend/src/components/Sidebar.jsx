@@ -9,6 +9,7 @@ const menuItems = [
   { label: "Lecture", path: "/lecture", requiredAccess: 'canAccessLecture' },
   { label: "Lab", path: "/lab", requiredAccess: 'canAccessLab' },
   { label: "Configure Resources", path: "/configure-resources", requiredAccess: 'canAccessResources' },
+  { label: "🚫 Restrictions", path: "/restrictions", alwaysEnabled: true }, // ✅ YOUR ADDITION WITH ACCESS CONTROL
   { label: "Generator", path: "/generator", requiredAccess: 'canAccessGenerator' },
 ];
 
