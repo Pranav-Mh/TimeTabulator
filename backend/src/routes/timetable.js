@@ -3,6 +3,8 @@ const router = express.Router();
 const Timetable = require('../models/Timetable');
 const Resource = require('../models/Resource');
 
+
+
 // Smart Timetable Generation Algorithm
 const generateSmartTimetable = async (subjects, teachers, resources) => {
   const timetableEntries = [];
@@ -35,6 +37,8 @@ const generateSmartTimetable = async (subjects, teachers, resources) => {
   
   return timetableEntries;
 };
+
+
 
 // Schedule Lab Subjects (Different days for same teacher)
 const scheduleLabSubject = async (subject, timetableEntries, teacherSchedule, labs, days, timeSlots) => {
@@ -113,6 +117,8 @@ const scheduleLabSubject = async (subject, timetableEntries, teacherSchedule, la
   }
 };
 
+
+
 // Schedule Theory Subjects (Entire division together)
 const scheduleTheorySubject = async (subject, timetableEntries, teacherSchedule, classrooms, days, timeSlots) => {
   const sessionsNeeded = subject.lectureHours;
@@ -160,6 +166,8 @@ const scheduleTheorySubject = async (subject, timetableEntries, teacherSchedule,
     }
   }
 };
+
+
 
 // Generate timetable for specific year and division
 router.post('/generate', async (req, res) => {
@@ -215,8 +223,10 @@ router.post('/generate', async (req, res) => {
   }
 });
 
-// Get timetable for specific year, division, and batch
-router.get('/:year/:division/:batch?', async (req, res) => {
+
+
+// Get timetable for specific year, division, and batch (FIXED FOR EXPRESS 5.0)
+router.get('/:year/:division{/:batch}', async (req, res) => {
   try {
     const { year, division, batch = 'ALL' } = req.params;
     
@@ -239,6 +249,8 @@ router.get('/:year/:division/:batch?', async (req, res) => {
   }
 });
 
+
+
 // Get all timetables
 router.get('/', async (req, res) => {
   try {
@@ -252,6 +264,8 @@ router.get('/', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+
 
 // Delete timetable
 router.delete('/:id', async (req, res) => {
@@ -275,5 +289,7 @@ router.delete('/:id', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+
 
 module.exports = router;

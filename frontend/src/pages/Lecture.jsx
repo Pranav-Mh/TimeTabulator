@@ -4,6 +4,7 @@ import axios from 'axios';
 const Lecture = () => {
   const [selectedYear, setSelectedYear] = useState('SE');
   const [selectedDivision, setSelectedDivision] = useState('A');
+  const [divisions, setDivisions] = useState([]); // ADD THIS LINE
   const [teachers, setTeachers] = useState([]);
   const [subjects, setSubjects] = useState([]);
   const [assignments, setAssignments] = useState({});
@@ -15,6 +16,20 @@ const Lecture = () => {
       setTeachers(response.data);
     } catch (error) {
       console.error('Error fetching teachers:', error);
+    }
+  };
+
+  // ADD THIS FUNCTION - COPIED FROM LAB.JSX
+  const fetchDivisions = async () => {
+    try {
+      const res = await axios.get(`http://localhost:5000/api/lectures/divisions/${selectedYear}`);
+      setDivisions(res.data);
+      if (res.data.length > 0) {
+        const firstDivision = res.data[0].name.split('-')[1]; // SE-A -> A
+        setSelectedDivision(firstDivision);
+      }
+    } catch (err) {
+      console.error('Error fetching divisions:', err);
     }
   };
 
@@ -104,11 +119,17 @@ const Lecture = () => {
     setTeacherWorkload(workload);
   }, [assignments, teachers, subjects]);
 
-  // Load subjects when component mounts or filters change
+  // MODIFY THIS useEffect - ADD fetchDivisions
   useEffect(() => {
     loadSubjects();
     fetchTeachers();
+    fetchDivisions(); // ADD THIS LINE
   }, [loadSubjects]);
+
+  // ADD THIS useEffect - FETCH DIVISIONS WHEN YEAR CHANGES
+  useEffect(() => {
+    fetchDivisions();
+  }, [selectedYear]);
 
   // Calculate teacher workload when assignments change
   useEffect(() => {
@@ -176,6 +197,7 @@ const Lecture = () => {
         
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <label style={{ fontWeight: '600', fontSize: '16px' }}>Division:</label>
+          {/* REPLACE THE HARDCODED SELECT WITH DYNAMIC ONE */}
           <select
             value={selectedDivision}
             onChange={(e) => setSelectedDivision(e.target.value)}
@@ -186,13 +208,15 @@ const Lecture = () => {
               fontSize: '14px'
             }}
           >
-            <option value="A">A</option>
-            <option value="B">B</option>
-            <option value="C">C</option>
+            {divisions.map(division => {
+              const divLetter = division.name.split('-')[1]; // SE-A -> A
+              return <option key={division._id} value={divLetter}>{divLetter}</option>;
+            })}
           </select>
         </div>
       </div>
 
+      {/* Rest of the component remains the same... */}
       {/* Subject Assignment Table */}
       <div style={{ marginBottom: '40px' }}>
         <div style={{
