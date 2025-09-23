@@ -7,7 +7,7 @@ const TimetableRestrictionSchema = new mongoose.Schema({
     trim: true
   },
   
-  // Simple type: time, teacher, or subject
+  // Type: time, teacher, or subject
   type: {
     type: String,
     enum: ['time', 'teacher', 'subject'],
@@ -28,25 +28,30 @@ const TimetableRestrictionSchema = new mongoose.Schema({
   }],
   
   // TIME-BASED fields (when type = 'time')
-  startTime: String,
-  endTime: String,
+  timeSlots: [Number], // Array of slot numbers (1, 2, 3, etc.)
   days: [{
     type: String,
     enum: ['All days', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
   }],
+  duration: {
+    type: Number,
+    default: 30 // Duration in minutes
+  },
   
   // TEACHER-BASED fields (when type = 'teacher')  
   teacherName: String,
-  unavailableSlots: [{
-    day: String,
-    startTime: String,
-    endTime: String,
-    reason: String
-  }],
+  unavailableSlots: [Number],
+  reason: String,
   
   // SUBJECT-BASED fields (when type = 'subject')
   subjectName: String,
-  blockedDays: [String],
+  restrictedDays: [String],
+  allowedTimeSlots: [Number],
+  roomType: {
+    type: String,
+    enum: ['any', 'CR', 'LAB'],
+    default: 'any'
+  },
   
   // Common fields
   priority: {
@@ -61,9 +66,29 @@ const TimetableRestrictionSchema = new mongoose.Schema({
   isActive: {
     type: Boolean,
     default: true
+  },
+  
+  // Booking metadata
+  bookedSlots: [{
+    slotNumber: Number,
+    day: String,
+    isConflict: {
+      type: Boolean,
+      default: false
+    }
+  }],
+  
+  // Advanced time configuration reference
+  timeConfigurationId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'TimeSlotConfiguration'
   }
 }, {
   timestamps: true
 });
+
+// ✅ FIXED: Only safe indexes (no compound array indexes)
+TimetableRestrictionSchema.index({ type: 1, isActive: 1 });
+TimetableRestrictionSchema.index({ scope: 1 });
 
 module.exports = mongoose.model('TimetableRestriction', TimetableRestrictionSchema);

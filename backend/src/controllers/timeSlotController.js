@@ -1,9 +1,6 @@
-const express = require('express');
-const router = express.Router();
 const TimeSlotConfiguration = require('../models/TimeSlotConfiguration');
-const { syncSlotTableWithRestrictions } = require('../controllers/restrictionsController');
 
-// ✅ FIXED: Save time configuration with sync
+// ✅ FIXED: Save time configuration while preserving manual edits
 const saveTimeConfiguration = async (req, res) => {
   try {
     const {
@@ -32,9 +29,7 @@ const saveTimeConfiguration = async (req, res) => {
         collegeEndTime,
         numberOfSlots,
         timeSlots: timeSlots.map(slot => ({
-          slotNumber: slot.slotNumber,
-          startTime: slot.startTime,
-          endTime: slot.endTime,
+          ...slot,
           originalStartTime: slot.startTime,
           originalEndTime: slot.endTime,
           isBooked: false,
@@ -60,9 +55,7 @@ const saveTimeConfiguration = async (req, res) => {
           );
           
           return {
-            slotNumber: newSlot.slotNumber,
-            startTime: newSlot.startTime,
-            endTime: newSlot.endTime,
+            ...newSlot,
             originalStartTime: newSlot.startTime,
             originalEndTime: newSlot.endTime,
             // ✅ PRESERVE booking status from existing slot
@@ -77,10 +70,11 @@ const saveTimeConfiguration = async (req, res) => {
 
     await config.save();
 
-    // ✅ CRITICAL: Sync with restrictions after saving configuration
-    await syncSlotTableWithRestrictions();
-
-    console.log('✅ Time configuration saved and synced with restrictions');
+    console.log('✅ Time configuration saved successfully:', {
+      numberOfSlots: config.numberOfSlots,
+      isManualMode: config.isManualMode,
+      slotsWithBookings: config.timeSlots.filter(s => s.isBooked).length
+    });
 
     res.json(config);
   } catch (error) {
@@ -89,7 +83,7 @@ const saveTimeConfiguration = async (req, res) => {
   }
 };
 
-// ✅ FIXED: Get time configuration with sync
+// Get time configuration
 const getTimeConfiguration = async (req, res) => {
   try {
     const config = await TimeSlotConfiguration.findOne({});
@@ -105,49 +99,20 @@ const getTimeConfiguration = async (req, res) => {
       });
     }
 
-    // ✅ CRITICAL: Sync before returning data
-    await syncSlotTableWithRestrictions();
-
-    // Fetch updated config after sync
-    const updatedConfig = await TimeSlotConfiguration.findOne({});
-
-    // Ensure timeSlots are properly structured
-    const structuredTimeSlots = updatedConfig.timeSlots.map(slot => ({
-      slotNumber: slot.slotNumber,
-      startTime: slot.startTime,
-      endTime: slot.endTime,
-      originalStartTime: slot.originalStartTime || slot.startTime,
-      originalEndTime: slot.originalEndTime || slot.endTime,
-      isBooked: slot.isBooked || false,
-      bookedBy: slot.bookedBy || null,
-      bookingScope: slot.bookingScope || null,
-      bookingAffectedYears: slot.bookingAffectedYears || []
-    }));
-
-    const response = {
-      collegeStartTime: updatedConfig.collegeStartTime,
-      collegeEndTime: updatedConfig.collegeEndTime,
-      numberOfSlots: updatedConfig.numberOfSlots,
-      timeSlots: structuredTimeSlots,
-      isManualMode: updatedConfig.isManualMode || false,
-      isConfigured: updatedConfig.isConfigured || false
-    };
-
-    console.log('📋 Retrieved and synced time configuration:', {
-      numberOfSlots: response.numberOfSlots,
-      isConfigured: response.isConfigured,
-      slotsWithBookings: structuredTimeSlots.filter(s => s.isBooked).length
+    console.log('📋 Retrieved time configuration:', {
+      numberOfSlots: config.numberOfSlots,
+      isConfigured: config.isConfigured,
+      slotsWithBookings: config.timeSlots?.filter(s => s.isBooked).length || 0
     });
 
-    res.json(response);
+    res.json(config);
   } catch (error) {
     console.error('Error fetching time configuration:', error);
     res.status(500).json({ error: 'Failed to fetch time configuration' });
   }
 };
 
-// Routes
-router.post('/time-configuration', saveTimeConfiguration);
-router.get('/time-configuration', getTimeConfiguration);
-
-module.exports = router;
+module.exports = {
+  saveTimeConfiguration,
+  getTimeConfiguration
+};
