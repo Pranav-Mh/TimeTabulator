@@ -1,100 +1,47 @@
 const mongoose = require('mongoose');
 
-const TimeSlotSchema = new mongoose.Schema({
-  slotNumber: {
-    type: Number,
-    required: true
-  },
-  originalStartTime: {
-    type: String,
-    required: true
-  },
-  originalEndTime: {
-    type: String,
-    required: true
-  },
-  adjustedStartTime: {
-    type: String,
-    required: true
-  },
-  adjustedEndTime: {
-    type: String,
-    required: true
-  },
-  isAdjusted: {
-    type: Boolean,
-    default: false
-  }
-});
-
-const FixedBookingSchema = new mongoose.Schema({
-  slotNumber: {
-    type: Number,
-    required: true
-  },
-  days: [{
-    type: String,
-    enum: ['All days', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-  }],
-  slotName: {
-    type: String,
-    required: true
-  },
-  durationMinutes: {
-    type: Number,
-    required: true,
-    min: 5,
-    max: 180
-  },
-  timingMode: {
-    type: String,
-    enum: ['duration', 'exact'],
-    default: 'duration'
-  },
-  exactStartTime: String,
-  exactEndTime: String,
-  calculatedDurationMinutes: Number,
-  affectedSlots: [Number],
-  startOffset: {
-    type: Number,
-    default: 0
-  }
-});
-
 const TimeSlotConfigurationSchema = new mongoose.Schema({
   collegeStartTime: {
     type: String,
-    required: true,
-    default: "08:00 AM"
+    required: true
   },
   collegeEndTime: {
     type: String,
-    required: true,
-    default: "03:00 PM"
+    required: true
   },
-  workingDaysPerWeek: {
+  numberOfSlots: {
     type: Number,
     required: true,
-    default: 5,
-    min: 1,
-    max: 7
-  },
-  timeSlotsPerDay: {
-    type: Number,
-    required: true,
-    default: 8,
-    min: 1,
+    min: 3,
     max: 15
   },
-  periodDurationMinutes: {
-    type: Number,
-    required: true,
-    default: 60,
-    min: 30,
-    max: 120
+  timeSlots: [{
+    slotNumber: {
+      type: Number,
+      required: true
+    },
+    startTime: {
+      type: String,
+      required: true
+    },
+    endTime: {
+      type: String,
+      required: true
+    },
+    originalStartTime: String,
+    originalEndTime: String,
+    isBooked: {
+      type: Boolean,
+      default: false
+    },
+    bookedBy: String,
+    bookingScope: String,
+    bookingAffectedYears: [String]
+  }],
+  isManualMode: {
+    type: Boolean,
+    default: false
   },
-  timeSlots: [TimeSlotSchema],
-  fixedBookings: [FixedBookingSchema],
   isConfigured: {
     type: Boolean,
     default: false
@@ -102,5 +49,8 @@ const TimeSlotConfigurationSchema = new mongoose.Schema({
 }, {
   timestamps: true
 });
+
+// Index for better performance
+TimeSlotConfigurationSchema.index({ isConfigured: 1 });
 
 module.exports = mongoose.model('TimeSlotConfiguration', TimeSlotConfigurationSchema);
