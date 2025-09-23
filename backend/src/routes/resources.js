@@ -3,6 +3,35 @@ const router = express.Router();
 const Resource = require('../models/Resource');
 const TimeSlotConfiguration = require('../models/TimeSlotConfiguration');
 
+// ✅ NEW: GET all resources for Generator readiness check (uses LIVE database data)
+router.get('/', async (req, res) => {
+  try {
+    console.log('🏢 Generator: Fetching all resources from database...');
+    
+    // ✅ PRIORITY 1: Get LIVE data from your database
+    const resources = await Resource.find({ isActive: true }).sort({ roomName: 1 });
+    
+    console.log(`✅ Generator: Found ${resources.length} LIVE resources from database`);
+    
+    // ✅ Return LIVE database data (this will return cf11, cg12, lab1, etc.)
+    if (resources.length > 0) {
+      console.log('📋 Live resources:', resources.map(r => `${r.roomName} (${r.type})`));
+      return res.json(resources);
+    }
+    
+    // ✅ FALLBACK: Only if database is completely empty
+    console.log('⚠️ No active resources found in database');
+    return res.json([]);
+    
+  } catch (error) {
+    console.error('❌ Generator: Error fetching resources:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch resources from database',
+      message: error.message
+    });
+  }
+});
+
 // Helper function to convert time string to minutes
 const convertTimeToMinutes = (timeStr) => {
   const cleanTime = timeStr.replace(/\s*(AM|PM)/i, '');
@@ -86,10 +115,11 @@ const recalculateTimeSlots = (baseSlots, fixedBookings, startTime) => {
   return adjustedSlots;
 };
 
-// Get all resources
+// ✅ EXISTING: Get all resources (used by Configure Resources page)
 router.get('/rooms', async (req, res) => {
   try {
     const resources = await Resource.find({ isActive: true }).sort({ roomName: 1 });
+    console.log(`📋 Configure Resources: Found ${resources.length} active resources`);
     res.json(resources);
   } catch (err) {
     console.error('❌ Error fetching resources:', err);
@@ -97,7 +127,7 @@ router.get('/rooms', async (req, res) => {
   }
 });
 
-// Add new resource
+// ✅ EXISTING: Add new resource
 router.post('/rooms', async (req, res) => {
   try {
     const { roomName, type, capacity } = req.body;
@@ -126,7 +156,7 @@ router.post('/rooms', async (req, res) => {
     });
     
     await resource.save();
-    console.log('✅ Resource saved:', resource._id);
+    console.log('✅ Resource saved:', resource.roomName, resource._id);
     
     res.status(201).json({
       resource,
@@ -142,7 +172,7 @@ router.post('/rooms', async (req, res) => {
   }
 });
 
-// Remove resource
+// ✅ EXISTING: Remove resource
 router.delete('/rooms/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -157,6 +187,8 @@ router.delete('/rooms/:id', async (req, res) => {
       return res.status(404).json({ error: 'Resource not found' });
     }
     
+    console.log('✅ Resource deactivated:', resource.roomName);
+    
     res.json({
       message: `${resource.type === 'CR' ? 'Classroom' : 'Laboratory'} "${resource.roomName}" removed successfully`
     });
@@ -167,7 +199,7 @@ router.delete('/rooms/:id', async (req, res) => {
   }
 });
 
-// ENHANCED Get time slot configuration with dynamic recalculation
+// ✅ ALL YOUR EXISTING TIME SLOT ROUTES (unchanged)
 router.get('/timeslots', async (req, res) => {
   try {
     let config = await TimeSlotConfiguration.findOne();
@@ -221,7 +253,6 @@ router.get('/timeslots', async (req, res) => {
   }
 });
 
-// ENHANCED Auto-generate time slots
 router.post('/timeslots/generate', async (req, res) => {
   try {
     const {
@@ -281,7 +312,6 @@ router.post('/timeslots/generate', async (req, res) => {
   }
 });
 
-// ENHANCED Add fixed booking with duration
 router.post('/timeslots/booking', async (req, res) => {
   try {
     const { slotNumber, days, slotName, durationMinutes } = req.body;
@@ -341,7 +371,6 @@ router.post('/timeslots/booking', async (req, res) => {
   }
 });
 
-// ENHANCED Save time slot configuration with dynamic recalculation
 router.post('/timeslots', async (req, res) => {
   try {
     const {
@@ -407,7 +436,6 @@ router.post('/timeslots', async (req, res) => {
   }
 });
 
-// Remove fixed booking
 router.delete('/timeslots/booking/:slotNumber', async (req, res) => {
   try {
     const { slotNumber } = req.params;
@@ -448,7 +476,6 @@ router.delete('/timeslots/booking/:slotNumber', async (req, res) => {
   }
 });
 
-// 🔧 FIXED: Get slot availability for all slots (no day parameter)
 router.get('/slots/availability', async (req, res) => {
   try {
     const config = await TimeSlotConfiguration.findOne();
@@ -511,7 +538,6 @@ router.get('/slots/availability', async (req, res) => {
   }
 });
 
-// 🔧 FIXED: Get slot availability for specific day
 router.get('/slots/availability/:day', async (req, res) => {
   try {
     const { day } = req.params;
@@ -579,7 +605,6 @@ router.get('/slots/availability/:day', async (req, res) => {
   }
 });
 
-// Get only available slots for a specific day (for timetable generation)
 router.get('/slots/available/:day', async (req, res) => {
   try {
     const { day } = req.params;
@@ -636,7 +661,6 @@ router.get('/slots/available/:day', async (req, res) => {
   }
 });
 
-// ENHANCED: Add fixed booking with exact time support and conflict detection
 router.post('/timeslots/booking-enhanced', async (req, res) => {
   try {
     const { 
@@ -809,7 +833,6 @@ router.post('/timeslots/booking-enhanced', async (req, res) => {
   }
 });
 
-// Get booking conflicts for preview
 router.post('/timeslots/check-conflicts', async (req, res) => {
   try {
     const { 

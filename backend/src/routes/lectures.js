@@ -28,7 +28,6 @@ router.get('/subjects/:year/:division', async (req, res) => {
   try {
     const { year, division } = req.params;
     
-    // Find the division
     const divisionDoc = await Division.findOne({ 
       academicYear: year, 
       name: `${year}-${division}` 
@@ -38,18 +37,15 @@ router.get('/subjects/:year/:division', async (req, res) => {
       return res.status(404).json({ error: `Division ${year}-${division} not found` });
     }
 
-    // Get theory subjects (TH, VAP, OE) for this academic year
     const subjects = await Subject.find({
       academicYear: year,
       type: { $in: ['TH', 'VAP', 'OE'] }
     });
 
-    // Get existing assignments for this division
     const existingAssignments = await LectureAssignment.find({
       divisionId: divisionDoc._id
     }).populate('teacherId', 'name teacherId');
 
-    // Combine subjects with their assignments
     const subjectsWithAssignments = subjects.map(subject => {
       const assignment = existingAssignments.find(
         a => a.subjectId.toString() === subject._id.toString()
@@ -95,22 +91,28 @@ router.post('/assign', async (req, res) => {
       });
     }
 
-    // Get subject details
     const subject = await Subject.findById(subjectId);
     if (!subject) {
       return res.status(404).json({ error: "Subject not found" });
     }
 
-    // Get teacher details
     const teacher = await Teacher.findById(teacherId);
     if (!teacher) {
       return res.status(404).json({ error: "Teacher not found" });
     }
 
-    // Check teacher workload
-    const currentAssignments = await LectureAssignment.find({ teacherId });
+    // Check teacher workload (include both lecture and lab assignments)
+    const lectureAssignments = await LectureAssignment.find({ teacherId });
+    const LabAssignment = require('../models/LabAssignment');
+    const labAssignments = await LabAssignment.find({ teacherId });
+    
     let totalHours = 0;
-    for (const assignment of currentAssignments) {
+    
+    for (const assignment of lectureAssignments) {
+      totalHours += assignment.hoursPerWeek;
+    }
+    
+    for (const assignment of labAssignments) {
       totalHours += assignment.hoursPerWeek;
     }
 
@@ -121,19 +123,16 @@ router.post('/assign', async (req, res) => {
       });
     }
 
-    // Check if assignment already exists
     const existingAssignment = await LectureAssignment.findOne({
       subjectId,
       divisionId
     });
 
     if (existingAssignment) {
-      // Update existing assignment
       existingAssignment.teacherId = teacherId;
       await existingAssignment.save();
       res.json({ message: "Assignment updated successfully", assignment: existingAssignment });
     } else {
-      // Create new assignment
       const newAssignment = new LectureAssignment({
         subjectId,
         divisionId,
@@ -151,26 +150,39 @@ router.post('/assign', async (req, res) => {
   }
 });
 
-// Get teacher workload summary
+// Get combined teacher workload summary (lectures + labs)
 router.get('/teacher-workload', async (req, res) => {
   try {
     const teachers = await Teacher.find().select('name teacherId maxHours');
-    const assignments = await LectureAssignment.find().populate('subjectId', 'hoursPerWeek');
+    const lectureAssignments = await LectureAssignment.find().populate('subjectId', 'hoursPerWeek');
+    const LabAssignment = require('../models/LabAssignment');
+    const labAssignments = await LabAssignment.find().populate('subjectId', 'hoursPerWeek');
 
     const workloadSummary = teachers.map(teacher => {
-      const teacherAssignments = assignments.filter(
+      const teacherLectures = lectureAssignments.filter(
+        a => a.teacherId.toString() === teacher._id.toString()
+      );
+      const teacherLabs = labAssignments.filter(
         a => a.teacherId.toString() === teacher._id.toString()
       );
       
-      const totalHours = teacherAssignments.reduce((sum, assignment) => {
-        return sum + assignment.hoursPerWeek;
+      const lectureHours = teacherLectures.reduce((sum, assignment) => {
+        return sum + (assignment.hoursPerWeek || 0);
       }, 0);
+      
+      const labHours = teacherLabs.reduce((sum, assignment) => {
+        return sum + (assignment.hoursPerWeek || 0);
+      }, 0);
+      
+      const totalHours = lectureHours + labHours;
 
       return {
         teacherId: teacher._id,
         name: teacher.name,
         teacherCode: teacher.teacherId,
-        currentHours: totalHours,
+        lectureHours,
+        labHours,
+        totalHours,
         maxHours: teacher.maxHours,
         availableHours: teacher.maxHours - totalHours
       };
