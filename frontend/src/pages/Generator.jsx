@@ -1,318 +1,453 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import TimetableGrid from '../components/TimetableGrid';
 
 const Generator = () => {
-  const [timetableConfig, setTimetableConfig] = useState({
-    year: 'SE',
-    division: 'A',
-    subjects: [],
-    teachers: []
+  const [config, setConfig] = useState({
+    includeBE: false,
+    divisions: {
+      SE: [],
+      TE: [],
+      BE: []
+    },
+    slots: [],
+    loading: false,
+    error: '',
+    success: ''
   });
-  
+
   const [generatedTimetable, setGeneratedTimetable] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
-  const [rooms, setRooms] = useState([]);
+  const [canGenerate, setCanGenerate] = useState(false);
 
-  // Sample data
-  const [sampleSubjects] = useState([
-    { 
-      name: 'Data Structures', 
-      teacher: 'Dr. Smith', 
-      lectureHours: 3, 
-      labHours: 2,
-      batchTeachers: { A1: 'Dr. Smith', A2: 'Prof. Jones', A3: 'Dr. Smith' }
-    },
-    { 
-      name: 'Operating System', 
-      teacher: 'Prof. Johnson', 
-      lectureHours: 4, 
-      labHours: 0 
-    },
-    { 
-      name: 'Database Management', 
-      teacher: 'Dr. Wilson', 
-      lectureHours: 3, 
-      labHours: 2,
-      batchTeachers: { A1: 'Dr. Wilson', A2: 'Dr. Wilson', A3: 'Prof. Davis' }
-    }
-  ]);
-
-  const [sampleTeachers] = useState([
-    { name: 'Dr. Smith', maxHours: 20 },
-    { name: 'Prof. Johnson', maxHours: 18 },
-    { name: 'Dr. Wilson', maxHours: 22 },
-    { name: 'Prof. Jones', maxHours: 16 },
-    { name: 'Prof. Davis', maxHours: 20 }
-  ]);
-
+  // ✅ Fetch all required data on component mount
   useEffect(() => {
-    fetchRooms();
-    setTimetableConfig(prev => ({
-      ...prev,
-      subjects: sampleSubjects,
-      teachers: sampleTeachers
-    }));
-  }, [sampleSubjects, sampleTeachers]);
+    fetchInitialData();
+  }, []);
 
-  const fetchRooms = async () => {
-    try {
-      const response = await axios.get('http://localhost:5000/api/resources/rooms');
-      setRooms(response.data);
-    } catch (err) {
-      console.error('Error fetching rooms:', err);
+  // ✅ Check if generation is possible
+  useEffect(() => {
+    const hasSeAndTe = config.divisions.SE.length > 0 && config.divisions.TE.length > 0;
+    const hasSlots = config.slots.length > 0;
+    setCanGenerate(hasSeAndTe && hasSlots);
+  }, [config.divisions, config.slots]);
+
+  // ✅ FIXED: Generate divisions based on numberOfDivisions
+  const generateDivisions = (numberOfDivisions, yearPrefix) => {
+    const divisions = [];
+    const divisionLetters = ['A', 'B', 'C', 'D', 'E', 'F']; // Support up to 6 divisions
+    
+    for (let i = 0; i < numberOfDivisions && i < divisionLetters.length; i++) {
+      divisions.push(divisionLetters[i]);
     }
+    
+    return divisions;
   };
 
-  const generateTimetable = async () => {
+  // ✅ FIXED: Fetch divisions and slots with correct parsing
+  const fetchInitialData = async () => {
+    setConfig(prev => ({ ...prev, loading: true, error: '' }));
+    
     try {
-      setLoading(true);
-      setError('');
+      // ✅ Get time slots first (this is working fine)
+      const slotsResponse = await axios.get('http://localhost:5000/api/resources/timeslots');
       
-      if (rooms.length === 0) {
-        setError('No rooms configured. Please add classrooms and labs in Configure Resources first.');
-        return;
+      // ✅ FIXED: Parse divisions correctly based on numberOfDivisions field
+      let seDivisions = [];
+      let teDivisions = [];
+      let beDivisions = [];
+
+      try {
+        const seResponse = await axios.get('http://localhost:5000/api/syllabus/SE');
+        if (seResponse.data) {
+          console.log('SE API Response:', seResponse.data);
+          
+          // Option 1: If numberOfDivisions exists, generate divisions
+          if (seResponse.data.numberOfDivisions) {
+            seDivisions = generateDivisions(seResponse.data.numberOfDivisions, 'SE');
+          }
+          // Option 2: If divisions field exists as string
+          else if (seResponse.data.divisions && typeof seResponse.data.divisions === 'string') {
+            seDivisions = seResponse.data.divisions
+              .split(',')
+              .map(div => div.trim().replace('SE-', ''))
+              .filter(div => div.length > 0);
+          }
+          // Option 3: If divisions field exists as array
+          else if (Array.isArray(seResponse.data.divisions)) {
+            seDivisions = seResponse.data.divisions.map(div => 
+              typeof div === 'string' ? div.replace('SE-', '') : div.name?.replace('SE-', '') || div
+            );
+          }
+        }
+      } catch (seError) {
+        console.log('SE syllabus not configured yet');
       }
 
-      const response = await axios.post('http://localhost:5000/api/timetable/generate', timetableConfig);
-      
-      setMessage(response.data.message);
-      setGeneratedTimetable(response.data.timetables);
-      
-    } catch (err) {
-      console.error('Error generating timetable:', err);
-      setError(err.response?.data?.error || 'Failed to generate timetable');
-    } finally {
-      setLoading(false);
-    }
-  };
+      try {
+        const teResponse = await axios.get('http://localhost:5000/api/syllabus/TE');
+        if (teResponse.data) {
+          console.log('TE API Response:', teResponse.data);
+          
+          // Option 1: If numberOfDivisions exists, generate divisions
+          if (teResponse.data.numberOfDivisions) {
+            teDivisions = generateDivisions(teResponse.data.numberOfDivisions, 'TE');
+          }
+          // Option 2: If divisions field exists as string
+          else if (teResponse.data.divisions && typeof teResponse.data.divisions === 'string') {
+            teDivisions = teResponse.data.divisions
+              .split(',')
+              .map(div => div.trim().replace('TE-', ''))
+              .filter(div => div.length > 0);
+          }
+          // Option 3: If divisions field exists as array
+          else if (Array.isArray(teResponse.data.divisions)) {
+            teDivisions = teResponse.data.divisions.map(div => 
+              typeof div === 'string' ? div.replace('TE-', '') : div.name?.replace('TE-', '') || div
+            );
+          }
+        }
+      } catch (teError) {
+        console.log('TE syllabus not configured yet');
+      }
 
-  const formatTimetableGrid = (entries) => {
-    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-    const timeSlots = ['9:00-10:00', '10:00-11:00', '11:30-12:30', '12:30-1:30', '2:30-3:30', '3:30-4:30'];
-    
-    const grid = {};
-    days.forEach(day => {
-      grid[day] = {};
-      timeSlots.forEach(slot => {
-        grid[day][slot] = null;
+      try {
+        const beResponse = await axios.get('http://localhost:5000/api/syllabus/BE');
+        if (beResponse.data) {
+          console.log('BE API Response:', beResponse.data);
+          
+          // Option 1: If numberOfDivisions exists, generate divisions
+          if (beResponse.data.numberOfDivisions) {
+            beDivisions = generateDivisions(beResponse.data.numberOfDivisions, 'BE');
+          }
+          // Option 2: If divisions field exists as string
+          else if (beResponse.data.divisions && typeof beResponse.data.divisions === 'string') {
+            beDivisions = beResponse.data.divisions
+              .split(',')
+              .map(div => div.trim().replace('BE-', ''))
+              .filter(div => div.length > 0);
+          }
+          // Option 3: If divisions field exists as array
+          else if (Array.isArray(beResponse.data.divisions)) {
+            beDivisions = beResponse.data.divisions.map(div => 
+              typeof div === 'string' ? div.replace('BE-', '') : div.name?.replace('BE-', '') || div
+            );
+          }
+        }
+      } catch (beError) {
+        console.log('BE syllabus not configured yet');
+      }
+
+      // ✅ FIXED: Handle slots data properly
+      let slotsData = [];
+      if (slotsResponse.data) {
+        if (slotsResponse.data.timeSlots) {
+          slotsData = slotsResponse.data.timeSlots;
+        } else if (Array.isArray(slotsResponse.data)) {
+          slotsData = slotsResponse.data;
+        }
+      }
+
+      setConfig(prev => ({
+        ...prev,
+        divisions: {
+          SE: seDivisions,
+          TE: teDivisions,
+          BE: beDivisions
+        },
+        slots: slotsData,
+        loading: false,
+        error: (seDivisions.length === 0 && teDivisions.length === 0) ? 
+          'Please configure SE and TE syllabus first in the Syllabus tab.' : ''
+      }));
+
+      console.log('✅ Final parsed divisions:', {
+        SE: seDivisions,
+        TE: teDivisions,
+        BE: beDivisions,
+        slotsCount: slotsData.length
       });
-    });
-    
-    entries.forEach(entry => {
-      if (grid[entry.day] && grid[entry.day][entry.timeSlot] !== undefined) {
-        grid[entry.day][entry.timeSlot] = entry;
+
+    } catch (error) {
+      console.error('Error fetching initial data:', error);
+      setConfig(prev => ({
+        ...prev,
+        error: 'Failed to load configuration data. Please check if the server is running and try again.',
+        loading: false
+      }));
+    }
+  };
+
+  // ✅ Handle BE checkbox change
+  const handleBEToggle = (e) => {
+    setConfig(prev => ({
+      ...prev,
+      includeBE: e.target.checked
+    }));
+  };
+
+  // ✅ Generate basic timetable structure
+  const generateTimetable = async () => {
+    setConfig(prev => ({ ...prev, loading: true, error: '', success: '' }));
+
+    try {
+      // Build division list based on selections
+      let activeDivisions = [
+        ...config.divisions.SE.map(div => `SE-${div}`),
+        ...config.divisions.TE.map(div => `TE-${div}`)
+      ];
+
+      if (config.includeBE && config.divisions.BE.length > 0) {
+        activeDivisions.push(...config.divisions.BE.map(div => `BE-${div}`));
       }
-    });
-    
-    return { grid, days, timeSlots };
+
+      // Create basic timetable structure
+      const timetableData = {
+        divisions: activeDivisions,
+        slots: config.slots,
+        days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+        generatedAt: new Date().toISOString()
+      };
+
+      // For now, we're just creating the basic structure
+      setGeneratedTimetable(timetableData);
+      setConfig(prev => ({
+        ...prev,
+        success: 'Timetable structure generated successfully!',
+        loading: false
+      }));
+
+    } catch (error) {
+      console.error('Error generating timetable:', error);
+      setConfig(prev => ({
+        ...prev,
+        error: 'Failed to generate timetable structure.',
+        loading: false
+      }));
+    }
+  };
+
+  // ✅ Add refresh button to reload data
+  const refreshData = () => {
+    fetchInitialData();
   };
 
   return (
     <div style={{ padding: '20px', maxWidth: '1400px', margin: '0 auto' }}>
       {/* Header */}
       <div style={{ marginBottom: '30px' }}>
-        <h1 style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-          🚀 Smart Timetable Generator
+        <h1 style={{ 
+          fontSize: '28px', 
+          fontWeight: 'bold', 
+          textAlign: 'center',
+          marginBottom: '8px',
+          color: '#333'
+        }}>
+          Timetable Generator
         </h1>
-        <p style={{ color: '#6c757d', fontSize: '16px' }}>
-          Generate intelligent timetables with automatic lab batch scheduling and teacher conflict resolution
+        <p style={{ textAlign: 'center', color: '#666', fontSize: '14px' }}>
+          Generate comprehensive timetables for SE and TE (BE optional)
         </p>
       </div>
 
-      {/* Messages */}
-      {error && (
+      {/* Error/Success Messages */}
+      {config.error && (
         <div style={{ 
-          color: '#d32f2f', 
-          backgroundColor: '#ffebee', 
-          padding: '16px', 
-          borderRadius: '8px', 
+          color: 'red', 
+          backgroundColor: '#ffe6e6', 
+          padding: '12px', 
+          borderRadius: '6px', 
           marginBottom: '20px',
-          border: '1px solid #f44336'
+          border: '1px solid #ffcccc'
         }}>
-          ❌ {error}
+          ⚠️ {config.error}
+        </div>
+      )}
+      
+      {config.success && (
+        <div style={{ 
+          color: 'green', 
+          backgroundColor: '#e6ffe6', 
+          padding: '12px', 
+          borderRadius: '6px', 
+          marginBottom: '20px',
+          border: '1px solid #ccffcc'
+        }}>
+          ✅ {config.success}
         </div>
       )}
 
-      {message && (
-        <div style={{ 
-          color: '#2e7d32', 
-          backgroundColor: '#e8f5e8', 
-          padding: '16px', 
-          borderRadius: '8px', 
-          marginBottom: '20px',
-          border: '1px solid #4caf50'
-        }}>
-          ✅ {message}
-        </div>
-      )}
-
-      {/* Configuration */}
+      {/* Configuration Panel */}
       <div style={{
-        backgroundColor: '#f8f9fa',
-        padding: '24px',
+        backgroundColor: 'white',
         borderRadius: '12px',
+        padding: '24px',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
         marginBottom: '30px'
       }}>
-        <h3 style={{ marginBottom: '16px' }}>📋 Configuration</h3>
-        
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
-          <div>
-            <label style={{ display: 'block', marginBottom: '4px', fontWeight: '600' }}>Academic Year</label>
-            <select
-              value={timetableConfig.year}
-              onChange={(e) => setTimetableConfig(prev => ({ ...prev, year: e.target.value }))}
-              style={{ width: '100%', padding: '12px', border: '1px solid #ddd', borderRadius: '4px' }}
-            >
-              <option value="SE">Second Year (SE)</option>
-              <option value="TE">Third Year (TE)</option>
-              <option value="BE">Fourth Year (BE)</option>
-            </select>
-          </div>
-          <div>
-            <label style={{ display: 'block', marginBottom: '4px', fontWeight: '600' }}>Division</label>
-            <select
-              value={timetableConfig.division}
-              onChange={(e) => setTimetableConfig(prev => ({ ...prev, division: e.target.value }))}
-              style={{ width: '100%', padding: '12px', border: '1px solid #ddd', borderRadius: '4px' }}
-            >
-              <option value="A">Division A</option>
-              <option value="B">Division B</option>
-              <option value="C">Division C</option>
-            </select>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+          <h2 style={{ fontSize: '20px', color: '#333', margin: 0 }}>
+            Generation Configuration
+          </h2>
+          <button
+            onClick={refreshData}
+            disabled={config.loading}
+            style={{
+              padding: '8px 16px',
+              fontSize: '14px',
+              backgroundColor: '#6b7280',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer'
+            }}
+          >
+            {config.loading ? '🔄' : '↻ Refresh Data'}
+          </button>
+        </div>
+
+        {/* Academic Years Info */}
+        <div style={{ marginBottom: '24px' }}>
+          <h3 style={{ fontSize: '16px', marginBottom: '12px', color: '#555' }}>
+            Academic Years & Divisions
+          </h3>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+            {/* SE Info */}
+            <div style={{ padding: '12px', backgroundColor: '#f8f9fa', borderRadius: '8px' }}>
+              <div style={{ fontWeight: '600', color: '#2563eb', marginBottom: '4px' }}>
+                Second Year (SE) ✅ Mandatory
+              </div>
+              <div style={{ fontSize: '14px', color: '#666' }}>
+                Divisions: {config.divisions.SE.length > 0 ? 
+                  config.divisions.SE.map(div => `SE-${div}`).join(', ') : 
+                  'Not configured'
+                }
+              </div>
+            </div>
+
+            {/* TE Info */}
+            <div style={{ padding: '12px', backgroundColor: '#f8f9fa', borderRadius: '8px' }}>
+              <div style={{ fontWeight: '600', color: '#2563eb', marginBottom: '4px' }}>
+                Third Year (TE) ✅ Mandatory
+              </div>
+              <div style={{ fontSize: '14px', color: '#666' }}>
+                Divisions: {config.divisions.TE.length > 0 ? 
+                  config.divisions.TE.map(div => `TE-${div}`).join(', ') : 
+                  'Not configured'
+                }
+              </div>
+            </div>
+
+            {/* BE Info */}
+            <div style={{ padding: '12px', backgroundColor: '#f8f9fa', borderRadius: '8px' }}>
+              <div style={{ fontWeight: '600', color: '#7c2d12', marginBottom: '4px' }}>
+                Fourth Year (BE) ⚙️ Optional
+              </div>
+              <div style={{ fontSize: '14px', color: '#666', marginBottom: '8px' }}>
+                Divisions: {config.divisions.BE.length > 0 ? 
+                  config.divisions.BE.map(div => `BE-${div}`).join(', ') : 
+                  'Not configured'
+                }
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', fontSize: '14px', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={config.includeBE}
+                  onChange={handleBEToggle}
+                  disabled={config.divisions.BE.length === 0}
+                  style={{ marginRight: '8px' }}
+                />
+                Include Fourth Year (BE) in generation
+                {config.divisions.BE.length === 0 && (
+                  <span style={{ marginLeft: '8px', fontSize: '12px', color: '#666' }}>(Not available)</span>
+                )}
+              </label>
+            </div>
           </div>
         </div>
 
-        {/* Room Status */}
-        <div style={{ marginBottom: '20px' }}>
-          <h4>📊 Resource Status</h4>
-          <div style={{ display: 'flex', gap: '16px' }}>
-            <div style={{ padding: '8px 16px', backgroundColor: '#e3f2fd', borderRadius: '8px' }}>
-              Classrooms: {rooms.filter(r => r.type === 'CR').length}
+        {/* Slots Info */}
+        <div style={{ marginBottom: '24px' }}>
+          <h3 style={{ fontSize: '16px', marginBottom: '12px', color: '#555' }}>
+            Time Slots Configuration
+          </h3>
+          <div style={{ padding: '12px', backgroundColor: '#f8f9fa', borderRadius: '8px' }}>
+            <div style={{ fontSize: '14px', color: '#666' }}>
+              Total Slots: {config.slots.length} | 
+              Available: {config.slots.filter(slot => !slot.isBooked).length} | 
+              Blocked: {config.slots.filter(slot => slot.isBooked).length}
             </div>
-            <div style={{ padding: '8px 16px', backgroundColor: '#e8f5e8', borderRadius: '8px' }}>
-              Labs: {rooms.filter(r => r.type === 'LAB').length}
-            </div>
+            {config.slots.length === 0 && (
+              <div style={{ fontSize: '12px', color: '#dc2626', marginTop: '4px' }}>
+                No time slots configured. Please configure time slots in Restrictions tab.
+              </div>
+            )}
           </div>
         </div>
+
+        {/* Generation Summary */}
+        {canGenerate && (
+          <div style={{ 
+            padding: '16px', 
+            backgroundColor: '#e6ffe6', 
+            borderRadius: '8px', 
+            marginBottom: '20px',
+            border: '1px solid #ccffcc'
+          }}>
+            <div style={{ fontWeight: '600', color: '#16a34a', marginBottom: '8px' }}>
+              Ready to Generate Timetable
+            </div>
+            <div style={{ fontSize: '14px', color: '#166534' }}>
+              Years: SE ({config.divisions.SE.length} divisions) + TE ({config.divisions.TE.length} divisions)
+              {config.includeBE && config.divisions.BE.length > 0 && 
+                ` + BE (${config.divisions.BE.length} divisions)`
+              }
+            </div>
+          </div>
+        )}
 
         {/* Generate Button */}
         <button
           onClick={generateTimetable}
-          disabled={loading || rooms.length === 0}
+          disabled={!canGenerate || config.loading}
           style={{
-            backgroundColor: loading ? '#6c757d' : '#007bff',
+            padding: '12px 24px',
+            fontSize: '16px',
+            fontWeight: '600',
+            backgroundColor: canGenerate ? '#2563eb' : '#9ca3af',
             color: 'white',
             border: 'none',
-            padding: '12px 24px',
-            borderRadius: '6px',
-            cursor: loading ? 'not-allowed' : 'pointer',
-            fontSize: '16px',
-            fontWeight: '600'
+            borderRadius: '8px',
+            cursor: canGenerate ? 'pointer' : 'not-allowed',
+            transition: 'all 0.2s'
           }}
         >
-          {loading ? '⏳ Generating...' : '🚀 Generate Smart Timetable'}
+          {config.loading ? '🔄 Generating...' : '🎯 Generate Timetable Structure'}
         </button>
+
+        {/* Help Text */}
+        {!canGenerate && (
+          <div style={{ 
+            marginTop: '12px', 
+            fontSize: '14px', 
+            color: '#666',
+            backgroundColor: '#f8f9fa',
+            padding: '12px',
+            borderRadius: '6px'
+          }}>
+            <strong>To generate timetable:</strong>
+            <ul style={{ marginTop: '8px', marginLeft: '16px' }}>
+              <li>Configure SE and TE syllabus in Syllabus tab</li>
+              <li>Configure time slots in Restrictions tab</li>
+              <li>Assign teachers to subjects in Lecture and Lab tabs</li>
+            </ul>
+          </div>
+        )}
       </div>
 
-      {/* Generated Timetables */}
-      {generatedTimetable && generatedTimetable.length > 0 && (
-        <div>
-          <h3 style={{ marginBottom: '20px' }}>📅 Generated Timetables</h3>
-          
-          {generatedTimetable.map((timetable, index) => {
-            const { grid, days, timeSlots } = formatTimetableGrid(timetable.entries);
-            
-            return (
-              <div key={index} style={{ marginBottom: '30px' }}>
-                <h4 style={{ 
-                  marginBottom: '16px',
-                  padding: '12px',
-                  backgroundColor: '#007bff',
-                  color: 'white',
-                  borderRadius: '8px'
-                }}>
-                  {timetable.year}-{timetable.division} 
-                  {timetable.batch !== 'ALL' ? ` Batch ${timetable.batch}` : ' (All Batches)'}
-                </h4>
-                
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ 
-                    width: '100%', 
-                    borderCollapse: 'collapse',
-                    backgroundColor: 'white',
-                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-                  }}>
-                    <thead>
-                      <tr>
-                        <th style={{ 
-                          padding: '12px', 
-                          border: '1px solid #ddd', 
-                          backgroundColor: '#f8f9fa',
-                          fontWeight: '600'
-                        }}>
-                          Time / Day
-                        </th>
-                        {days.map(day => (
-                          <th key={day} style={{ 
-                            padding: '12px', 
-                            border: '1px solid #ddd', 
-                            backgroundColor: '#f8f9fa',
-                            fontWeight: '600'
-                          }}>
-                            {day}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {timeSlots.map(slot => (
-                        <tr key={slot}>
-                          <td style={{ 
-                            padding: '12px', 
-                            border: '1px solid #ddd', 
-                            backgroundColor: '#f8f9fa',
-                            fontWeight: '600'
-                          }}>
-                            {slot}
-                          </td>
-                          {days.map(day => {
-                            const entry = grid[day][slot];
-                            return (
-                              <td key={`${day}-${slot}`} style={{ 
-                                padding: '8px', 
-                                border: '1px solid #ddd',
-                                textAlign: 'center',
-                                backgroundColor: entry ? (entry.isLabSession ? '#e8f5e8' : '#e3f2fd') : 'white'
-                              }}>
-                                {entry ? (
-                                  <div>
-                                    <div style={{ fontWeight: '600', fontSize: '14px' }}>
-                                      {entry.subject}
-                                    </div>
-                                    <div style={{ fontSize: '12px', color: '#666' }}>
-                                      {entry.teacher}
-                                    </div>
-                                    <div style={{ fontSize: '12px', color: '#666' }}>
-                                      {entry.room} {entry.batch !== 'ALL' ? `(${entry.batch})` : ''}
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div style={{ color: '#ccc' }}>Free</div>
-                                )}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+      {/* Generated Timetable Display */}
+      {generatedTimetable && (
+        <TimetableGrid timetableData={generatedTimetable} />
       )}
     </div>
   );

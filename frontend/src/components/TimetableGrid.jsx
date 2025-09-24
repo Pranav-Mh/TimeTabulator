@@ -1,330 +1,210 @@
-import React, { useState } from 'react';
+import React from 'react';
 
-const TimetableGrid = ({ timetable, status, conflicts = [] }) => {
-  const [selectedView, setSelectedView] = useState('all'); // 'all', specific division
-  const [selectedDay, setSelectedDay] = useState('all'); // 'all', specific day
-
-  if (!timetable || !timetable.slots) {
+const TimetableGrid = ({ timetableData }) => {
+  if (!timetableData) {
     return (
-      <div style={{
-        backgroundColor: '#f8f9fa',
-        padding: '40px',
-        borderRadius: '12px',
-        textAlign: 'center',
-        color: '#6c757d'
-      }}>
-        <div style={{ fontSize: '48px', marginBottom: '16px' }}>📅</div>
-        <p>No timetable data available</p>
+      <div style={{ textAlign: 'center', padding: '40px', color: '#666' }}>
+        No timetable data available
       </div>
     );
   }
 
-  // ✅ Process timetable data
-  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const divisions = [...new Set(timetable.slots.map(slot => `${slot.division.year}-${slot.division.divisionName}`))];
-  const maxSlot = Math.max(...timetable.slots.map(slot => slot.slotNumber));
-  const slots = Array.from({ length: maxSlot }, (_, i) => i + 1);
+  const { divisions, slots, days } = timetableData;
 
-  // ✅ Group slots by division and day
-  const groupedSlots = {};
-  divisions.forEach(div => {
-    groupedSlots[div] = {};
-    days.forEach(day => {
-      groupedSlots[div][day] = {};
-      slots.forEach(slotNum => {
-        groupedSlots[div][day][slotNum] = null;
-      });
-    });
-  });
-
-  // ✅ Fill in the assignments
-  timetable.slots.forEach(slot => {
-    const divKey = `${slot.division.year}-${slot.division.divisionName}`;
-    if (groupedSlots[divKey] && groupedSlots[divKey][slot.day]) {
-      groupedSlots[divKey][slot.day][slot.slotNumber] = slot;
-    }
-  });
-
-  // ✅ Get filtered divisions based on selected view
-  const filteredDivisions = selectedView === 'all' 
-    ? divisions 
-    : divisions.filter(div => div === selectedView);
-
-  // ✅ Get filtered days based on selected day
-  const filteredDays = selectedDay === 'all' 
-    ? days 
-    : [selectedDay];
-
-  // ✅ Get slot time range
-  const getSlotTime = (slotNumber) => {
-    const times = {
-      1: '08:00-09:00',
-      2: '09:00-10:00', 
-      3: '10:00-10:15', // Short break
-      4: '10:15-11:15',
-      5: '11:15-12:15',
-      6: '12:15-13:00', // Lunch
-      7: '13:00-14:00',
-      8: '14:00-15:00'
-    };
-    return times[slotNumber] || `Slot ${slotNumber}`;
-  };
-
-  // ✅ Get cell content and styling
-  const getCellInfo = (slot) => {
-    if (!slot) {
+  // ✅ Get slot display info
+  const getSlotInfo = (slot) => {
+    if (slot.isBooked) {
       return {
-        content: <span style={{ color: '#999' }}>Free</span>,
-        style: { backgroundColor: '#f8f9fa', color: '#6c757d' }
+        display: slot.bookedBy || 'RECESS',
+        style: {
+          backgroundColor: '#fee2e2',
+          color: '#dc2626',
+          fontWeight: '600',
+          textAlign: 'center'
+        }
       };
     }
-
-    const isLab = slot.type === 'lab';
-    const isConflicted = conflicts.some(conflict => 
-      conflict.affectedDivisions?.includes(`${slot.division.year}-${slot.division.divisionName}`)
-    );
-
     return {
-      content: (
-        <div style={{ fontSize: '12px', lineHeight: '1.2' }}>
-          <div style={{ fontWeight: 'bold', color: isLab ? '#1976d2' : '#2e7d32' }}>
-            {slot.subject.name}
-          </div>
-          <div style={{ fontSize: '10px', color: '#666' }}>
-            {slot.teacher.name}
-          </div>
-          <div style={{ fontSize: '10px', color: '#666' }}>
-            {slot.room.name}
-          </div>
-          {isLab && slot.batch && (
-            <div style={{ fontSize: '10px', color: '#1976d2', fontWeight: 'bold' }}>
-              {slot.batch}
-            </div>
-          )}
-        </div>
-      ),
+      display: '',
       style: {
-        backgroundColor: isConflicted ? '#ffebee' : (isLab ? '#e3f2fd' : '#e8f5e8'),
-        border: isConflicted ? '2px solid #f44336' : '1px solid #ddd',
-        color: isConflicted ? '#d32f2f' : '#333'
+        backgroundColor: '#f9fafb',
+        border: '1px dashed #d1d5db',
+        textAlign: 'center'
       }
     };
   };
 
   return (
-    <div style={{ marginBottom: '30px' }}>
-      {/* Header */}
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center', 
-        marginBottom: '20px' 
+    <div style={{ marginTop: '30px' }}>
+      <h2 style={{ 
+        fontSize: '20px', 
+        fontWeight: '600', 
+        marginBottom: '20px',
+        color: '#333'
       }}>
-        <h3 style={{ margin: 0, color: '#333' }}>
-          📅 Master Timetable {status === 'conflicts' && '(With Conflicts)'}
-        </h3>
-        
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-          {/* Day Filter */}
-          <select
-            value={selectedDay}
-            onChange={(e) => setSelectedDay(e.target.value)}
-            style={{
-              padding: '6px 12px',
-              border: '1px solid #ddd',
-              borderRadius: '4px',
-              fontSize: '14px'
-            }}
-          >
-            <option value="all">All Days</option>
-            {days.map(day => (
-              <option key={day} value={day}>{day}</option>
-            ))}
-          </select>
+        Generated Timetable Structure
+      </h2>
 
-          {/* Division Filter */}
-          <select
-            value={selectedView}
-            onChange={(e) => setSelectedView(e.target.value)}
-            style={{
-              padding: '6px 12px',
-              border: '1px solid #ddd',
-              borderRadius: '4px',
-              fontSize: '14px'
-            }}
-          >
-            <option value="all">All Divisions</option>
-            {divisions.map(div => (
-              <option key={div} value={div}>{div}</option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Legend */}
-      <div style={{ 
-        display: 'flex', 
-        gap: '16px', 
-        marginBottom: '16px',
-        fontSize: '14px'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <div style={{ 
-            width: '16px', 
-            height: '16px', 
-            backgroundColor: '#e8f5e8', 
-            border: '1px solid #4caf50',
-            borderRadius: '3px' 
-          }}></div>
-          <span>Theory Lecture</span>
-        </div>
-        
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <div style={{ 
-            width: '16px', 
-            height: '16px', 
-            backgroundColor: '#e3f2fd', 
-            border: '1px solid #2196f3',
-            borderRadius: '3px' 
-          }}></div>
-          <span>Lab Session</span>
-        </div>
-        
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <div style={{ 
-            width: '16px', 
-            height: '16px', 
-            backgroundColor: '#f8f9fa', 
-            border: '1px solid #ddd',
-            borderRadius: '3px' 
-          }}></div>
-          <span>Free Slot</span>
-        </div>
-
-        {status === 'conflicts' && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <div style={{ 
-              width: '16px', 
-              height: '16px', 
-              backgroundColor: '#ffebee', 
-              border: '2px solid #f44336',
-              borderRadius: '3px' 
-            }}></div>
-            <span>Conflict</span>
-          </div>
-        )}
-      </div>
-
-      {/* Timetable Grid */}
-      <div style={{ 
-        overflowX: 'auto',
+      <div style={{
         backgroundColor: 'white',
-        borderRadius: '8px',
+        borderRadius: '12px',
+        overflow: 'hidden',
         boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
       }}>
-        {filteredDays.map(day => (
-          <div key={day} style={{ marginBottom: '24px' }}>
-            {/* Day Header */}
-            <div style={{
-              backgroundColor: '#1976d2',
-              color: 'white',
-              padding: '12px 16px',
-              fontWeight: 'bold',
-              fontSize: '16px'
-            }}>
-              {day}
-            </div>
-
-            {/* Day Timetable */}
-            <table style={{ 
-              width: '100%', 
-              borderCollapse: 'collapse',
-              fontSize: '12px'
-            }}>
-              <thead>
-                <tr style={{ backgroundColor: '#f5f5f5' }}>
-                  <th style={{
-                    padding: '12px 8px',
-                    textAlign: 'left',
-                    borderBottom: '2px solid #ddd',
-                    minWidth: '120px',
-                    fontWeight: '600'
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1000px' }}>
+            {/* Header Row */}
+            <thead>
+              <tr style={{ backgroundColor: '#f8f9fa' }}>
+                <th style={{
+                  padding: '12px',
+                  textAlign: 'left',
+                  fontWeight: '600',
+                  borderBottom: '2px solid #dee2e6',
+                  color: '#495057',
+                  width: '120px',
+                  position: 'sticky',
+                  left: 0,
+                  backgroundColor: '#f8f9fa',
+                  zIndex: 10
+                }}>
+                  Day / Division
+                </th>
+                {slots.map((slot, index) => (
+                  <th key={index} style={{
+                    padding: '8px 4px',
+                    textAlign: 'center',
+                    fontWeight: '600',
+                    borderBottom: '2px solid #dee2e6',
+                    color: '#495057',
+                    fontSize: '12px',
+                    minWidth: '100px',
+                    backgroundColor: slot.isBooked ? '#fee2e2' : '#f8f9fa'
                   }}>
-                    Division
-                  </th>
-                  {slots.map(slotNum => (
-                    <th key={slotNum} style={{
-                      padding: '8px 4px',
-                      textAlign: 'center',
-                      borderBottom: '2px solid #ddd',
-                      minWidth: '140px',
-                      fontSize: '11px',
-                      fontWeight: '600'
-                    }}>
-                      <div>Slot {slotNum}</div>
-                      <div style={{ fontSize: '10px', color: '#666', fontWeight: 'normal' }}>
-                        {getSlotTime(slotNum)}
+                    <div>Slot {slot.slotNumber}</div>
+                    <div style={{ fontSize: '10px', color: '#666' }}>
+                      {slot.startTime}-{slot.endTime}
+                    </div>
+                    {slot.isBooked && (
+                      <div style={{ fontSize: '10px', color: '#dc2626', fontWeight: '700' }}>
+                        {slot.bookedBy || 'BLOCKED'}
                       </div>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filteredDivisions.map((division, divIndex) => (
-                  <tr key={division} style={{
-                    backgroundColor: divIndex % 2 === 0 ? '#fdfdfd' : 'white'
-                  }}>
-                    <td style={{
-                      padding: '12px 8px',
-                      fontWeight: '600',
-                      borderRight: '1px solid #ddd',
-                      borderBottom: '1px solid #eee',
-                      color: '#333'
-                    }}>
-                      {division}
-                    </td>
-                    {slots.map(slotNum => {
-                      const slot = groupedSlots[division][day][slotNum];
-                      const cellInfo = getCellInfo(slot);
-                      
-                      return (
-                        <td key={slotNum} style={{
-                          padding: '8px 4px',
-                          textAlign: 'center',
-                          borderRight: '1px solid #eee',
-                          borderBottom: '1px solid #eee',
-                          minHeight: '80px',
-                          verticalAlign: 'middle',
-                          ...cellInfo.style
-                        }}>
-                          {cellInfo.content}
-                        </td>
-                      );
-                    })}
-                  </tr>
+                    )}
+                  </th>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        ))}
+              </tr>
+            </thead>
+
+            <tbody>
+              {days.map((day, dayIndex) => (
+                <React.Fragment key={day}>
+                  {/* Day Header Row */}
+                  <tr style={{ backgroundColor: '#e5e7eb' }}>
+                    <td style={{
+                      padding: '10px 12px',
+                      fontWeight: '600',
+                      color: '#374151',
+                      borderBottom: '1px solid #d1d5db',
+                      position: 'sticky',
+                      left: 0,
+                      backgroundColor: '#e5e7eb',
+                      zIndex: 9
+                    }}>
+                      {day}
+                    </td>
+                    {slots.map((slot, slotIndex) => (
+                      <td key={slotIndex} style={{
+                        borderBottom: '1px solid #d1d5db',
+                        backgroundColor: '#e5e7eb'
+                      }}></td>
+                    ))}
+                  </tr>
+
+                  {/* Division Rows for this day */}
+                  {divisions.map((division, divIndex) => (
+                    <tr key={`${day}-${division}`} style={{
+                      backgroundColor: divIndex % 2 === 0 ? '#ffffff' : '#f9fafb',
+                      borderBottom: divIndex === divisions.length - 1 ? '2px solid #d1d5db' : '1px solid #e5e7eb'
+                    }}>
+                      <td style={{
+                        padding: '10px 12px',
+                        fontWeight: '500',
+                        color: '#4b5563',
+                        borderRight: '1px solid #e5e7eb',
+                        position: 'sticky',
+                        left: 0,
+                        backgroundColor: divIndex % 2 === 0 ? '#ffffff' : '#f9fafb',
+                        zIndex: 8
+                      }}>
+                        <span style={{
+                          padding: '4px 8px',
+                          backgroundColor: division.startsWith('SE') ? '#dbeafe' : 
+                                          division.startsWith('TE') ? '#dcfce7' : '#fef3c7',
+                          color: division.startsWith('SE') ? '#1e40af' : 
+                                 division.startsWith('TE') ? '#166534' : '#92400e',
+                          borderRadius: '4px',
+                          fontSize: '12px',
+                          fontWeight: '600'
+                        }}>
+                          {division}
+                        </span>
+                      </td>
+                      
+                      {slots.map((slot, slotIndex) => {
+                        const slotInfo = getSlotInfo(slot);
+                        return (
+                          <td key={slotIndex} style={{
+                            padding: '8px 4px',
+                            fontSize: '11px',
+                            borderRight: '1px solid #e5e7eb',
+                            minHeight: '40px',
+                            ...slotInfo.style
+                          }}>
+                            {slotInfo.display}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      {/* Statistics Summary */}
-      {timetable.statistics && (
-        <div style={{
-          marginTop: '16px',
-          padding: '12px',
-          backgroundColor: '#f8f9fa',
-          borderRadius: '6px',
-          fontSize: '14px',
-          color: '#6c757d'
-        }}>
-          <strong>Quick Stats:</strong> {timetable.statistics.totalSlots} total assignments • 
-          {timetable.statistics.totalSubjects} subjects • 
-          {timetable.statistics.totalTeachers} teachers • 
-          {timetable.statistics.utilizationRate}% slot utilization
+      {/* Timetable Info */}
+      <div style={{ 
+        marginTop: '20px', 
+        padding: '16px', 
+        backgroundColor: '#f8f9fa', 
+        borderRadius: '8px',
+        fontSize: '14px',
+        color: '#666'
+      }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
+          <div>
+            <strong>Total Divisions:</strong> {divisions.length}
+          </div>
+          <div>
+            <strong>Total Slots:</strong> {slots.length}
+          </div>
+          <div>
+            <strong>Available Slots:</strong> {slots.filter(slot => !slot.isBooked).length}
+          </div>
+          <div>
+            <strong>Blocked Slots:</strong> {slots.filter(slot => slot.isBooked).length}
+          </div>
         </div>
-      )}
+        
+        <div style={{ marginTop: '12px', fontSize: '12px' }}>
+          <strong>Legend:</strong> 
+          <span style={{ marginLeft: '8px', padding: '2px 6px', backgroundColor: '#dbeafe', color: '#1e40af', borderRadius: '3px' }}>SE</span>
+          <span style={{ marginLeft: '8px', padding: '2px 6px', backgroundColor: '#dcfce7', color: '#166534', borderRadius: '3px' }}>TE</span>
+          <span style={{ marginLeft: '8px', padding: '2px 6px', backgroundColor: '#fef3c7', color: '#92400e', borderRadius: '3px' }}>BE</span>
+          <span style={{ marginLeft: '8px', padding: '2px 6px', backgroundColor: '#fee2e2', color: '#dc2626', borderRadius: '3px' }}>Blocked</span>
+        </div>
+      </div>
     </div>
   );
 };

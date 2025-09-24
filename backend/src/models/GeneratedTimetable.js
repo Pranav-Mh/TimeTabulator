@@ -1,34 +1,61 @@
 const mongoose = require('mongoose');
 
-const generatedTimetableSchema = new mongoose.Schema({
+const GeneratedTimetableSchema = new mongoose.Schema({
   name: {
     type: String,
-    required: true,
-    unique: true
+    required: true
   },
+  academicYear: {
+    type: String,
+    enum: ['SE', 'TE', 'BE'],
+    required: true
+  },
+  divisions: [{
+    type: String,
+    required: true
+  }],
   generatedAt: {
     type: Date,
     default: Date.now
   },
   status: {
     type: String,
-    enum: ['active', 'archived', 'draft'],
-    default: 'active'
+    enum: ['generating', 'completed', 'failed', 'saved'],
+    default: 'generating'
   },
-  divisions: [{
-    year: String,
-    divisionName: String,
-    totalStudents: Number
+  conflicts: [{
+    type: {
+      type: String,
+      enum: ['teacher_conflict', 'room_conflict', 'workload_exceeded'],
+      required: true
+    },
+    description: String,
+    suggestion: String,
+    resolved: {
+      type: Boolean,
+      default: false
+    }
   }],
-  statistics: {
-    totalSubjects: Number,
-    totalSlots: Number,
-    utilizationRate: Number,
-    conflictCount: Number,
-    generationTime: Number
+  slots: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'TimetableSlot'
+  }],
+  generationSettings: {
+    workingDays: {
+      type: Number,
+      default: 5
+    },
+    slotsPerDay: {
+      type: Number,
+      default: 8
+    },
+    allowSaturdayLabs: {
+      type: Boolean,
+      default: true
+    }
   }
 }, {
   timestamps: true
 });
 
-module.exports = mongoose.model('GeneratedTimetable', generatedTimetableSchema);
+module.exports = mongoose.model('GeneratedTimetable', GeneratedTimetableSchema);

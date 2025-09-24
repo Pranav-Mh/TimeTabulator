@@ -20,17 +20,44 @@ router.get('/status', async (req, res) => {
   }
 });
 
-// Get syllabus by academic year
+// ✅ FIXED: Get syllabus by academic year (for Generator.jsx)
 router.get('/:year', async (req, res) => {
   try {
     const { year } = req.params;
+    console.log('🔥 DEBUG: Getting syllabus for year:', year);
+    
     const syllabus = await Syllabus.findOne({ academicYear: year }).populate('subjects');
     
     if (!syllabus) {
+      console.log('❌ DEBUG: No syllabus found for year:', year);
       return res.status(404).json({ error: `${year} syllabus not found` });
     }
+
+    console.log('✅ DEBUG: Found syllabus:', syllabus);
+
+    // ✅ FIXED: Generate division names from numDivisions
+    const generateDivisions = (numDivisions, year) => {
+      const divisionLetters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
+      const divisions = [];
+      
+      for (let i = 0; i < numDivisions && i < divisionLetters.length; i++) {
+        divisions.push(`${year}-${divisionLetters[i]}`);
+      }
+      
+      return divisions.join(', ');
+    };
+
+    // ✅ FIXED: Return data in the format that Generator.jsx expects
+    const responseData = {
+      academicYear: syllabus.academicYear,
+      numberOfDivisions: syllabus.numDivisions, // Map numDivisions to numberOfDivisions
+      divisions: generateDivisions(syllabus.numDivisions, syllabus.academicYear), // Generate division string
+      subjects: syllabus.subjects || []
+    };
     
-    res.json(syllabus);
+    console.log('✅ DEBUG: Returning formatted data:', responseData);
+    res.json(responseData);
+    
   } catch (err) {
     console.error('❌ Error fetching syllabus:', err);
     res.status(500).json({ error: err.message });
