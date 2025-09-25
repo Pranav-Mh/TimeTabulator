@@ -11,8 +11,15 @@ const Syllabus = () => {
   const [successMessage, setSuccessMessage] = useState('');
 
   useEffect(() => {
-    fetchSyllabusStatus();
+    // Fetch when component mounts
     loadSyllabus(selectedYear);
+    fetchSyllabusStatus();
+  }, []);
+
+  useEffect(() => {
+    // Fetch again when user changes year
+    loadSyllabus(selectedYear);
+    fetchSyllabusStatus();
   }, [selectedYear]);
 
   const fetchSyllabusStatus = async () => {
@@ -27,9 +34,7 @@ const Syllabus = () => {
   const loadSyllabus = async (year) => {
     try {
       const res = await axios.get(`http://localhost:5000/api/syllabus/${year}`);
-      setNumDivisions(res.data.numDivisions);
-      
-      // Map existing subjects to include courseCode
+      setNumDivisions(parseInt(res.data.numberOfDivisions) || 1);  // Force number type
       const existingSubjects = res.data.subjects?.map(subject => ({
         courseCode: subject.courseCode || '',
         name: subject.name || '',
@@ -37,10 +42,8 @@ const Syllabus = () => {
         credits: subject.credits || '',
         hoursPerWeek: subject.hoursPerWeek || ''
       })) || [];
-      
       setSubjects(existingSubjects);
     } catch (err) {
-      // Syllabus doesn't exist yet, start fresh
       setNumDivisions(1);
       setSubjects([]);
     }
@@ -52,10 +55,7 @@ const Syllabus = () => {
   };
 
   const addSubject = () => {
-    setSubjects([
-      ...subjects,
-      { courseCode: '', name: '', type: 'TH', credits: '', hoursPerWeek: '' }
-    ]);
+    setSubjects([...subjects, { courseCode: '', name: '', type: 'TH', credits: '', hoursPerWeek: '' }]);
   };
 
   const removeSubject = (index) => {
@@ -64,17 +64,12 @@ const Syllabus = () => {
 
   const updateSubject = (index, field, value) => {
     const updatedSubjects = [...subjects];
-    
-    // Auto-generate course code if name is provided and courseCode is empty
     if (field === 'name' && !updatedSubjects[index].courseCode && value) {
       const baseCode = getYearPrefix(selectedYear) + (index + 1).toString().padStart(2, '0');
       updatedSubjects[index].courseCode = baseCode;
     }
-    
     updatedSubjects[index][field] = value;
     setSubjects(updatedSubjects);
-    
-    // Clear error when user makes changes
     if (errorMessage) setErrorMessage('');
   };
 
@@ -84,11 +79,7 @@ const Syllabus = () => {
   };
 
   const validateSubjects = () => {
-    if (subjects.length === 0) {
-      return 'Please add at least one subject';
-    }
-
-    // Check for required fields
+    if (subjects.length === 0) return 'Please add at least one subject';
     for (const subject of subjects) {
       if (!subject.courseCode || !subject.name || !subject.credits || !subject.hoursPerWeek) {
         return 'Please fill all subject fields including Course Code';
@@ -97,14 +88,9 @@ const Syllabus = () => {
         return 'Course Code must be at least 3 characters long';
       }
     }
-
-    // Check for duplicate course codes
     const courseCodes = subjects.map(s => s.courseCode.toUpperCase());
-    const duplicates = courseCodes.filter((code, index) => courseCodes.indexOf(code) !== index);
-    if (duplicates.length > 0) {
-      return `Duplicate course codes found: ${[...new Set(duplicates)].join(', ')}`;
-    }
-
+    const duplicates = courseCodes.filter((code, i) => courseCodes.indexOf(code) !== i);
+    if (duplicates.length > 0) return `Duplicate course codes found: ${[...new Set(duplicates)].join(', ')}`;
     return null;
   };
 
@@ -112,14 +98,11 @@ const Syllabus = () => {
     e.preventDefault();
     setErrorMessage('');
     setSuccessMessage('');
-
-    // Validate subjects
     const validationError = validateSubjects();
     if (validationError) {
       setErrorMessage(validationError);
       return;
     }
-
     try {
       const response = await axios.post('http://localhost:5000/api/syllabus', {
         academicYear: selectedYear,
@@ -131,11 +114,9 @@ const Syllabus = () => {
           hoursPerWeek: parseInt(s.hoursPerWeek)
         }))
       });
-
       setSuccessMessage(`✅ ${selectedYear} syllabus saved successfully! Created ${response.data.courseCodes?.length || 0} subjects.`);
       fetchSyllabusStatus();
       setTimeout(() => setSuccessMessage(''), 5000);
-
     } catch (err) {
       const errorMsg = err.response?.data?.error || 'An error occurred while saving syllabus';
       setErrorMessage(errorMsg);
@@ -150,71 +131,35 @@ const Syllabus = () => {
   return (
     <div className="syllabus-page">
       <h1>Syllabus Configuration</h1>
-      
-      {/* Progress Status */}
-      <div style={{ 
-        backgroundColor: '#f8f9fa', 
-        padding: '15px', 
-        marginBottom: '20px', 
-        borderRadius: '8px',
-        border: '1px solid #dee2e6'
-      }}>
+      <div style={{ backgroundColor: '#f8f9fa', padding: '15px', marginBottom: '20px', borderRadius: '8px', border: '1px solid #dee2e6' }}>
         <h3>Completion Status:</h3>
         <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
           <span>SE: {seStatus}</span>
           <span>TE: {teStatus}</span>
           <span>BE: {beStatus}</span>
-          <span style={{ 
-            color: canAccessLecture ? 'green' : 'red',
-            fontWeight: 'bold'
-          }}>
+          <span style={{ color: canAccessLecture ? 'green' : 'red', fontWeight: 'bold' }}>
             {canAccessLecture ? '🔓 Lecture Tab Unlocked' : '🔒 Complete SE + TE to unlock Lecture Tab'}
           </span>
         </div>
       </div>
-
-      {/* Error/Success Messages */}
       {errorMessage && (
-        <div style={{ 
-          color: 'red', 
-          backgroundColor: '#ffe6e6', 
-          padding: '10px', 
-          borderRadius: '5px', 
-          marginBottom: '10px',
-          border: '1px solid red'
-        }}>
+        <div style={{ color: 'red', backgroundColor: '#ffe6e6', padding: '10px', borderRadius: '5px', marginBottom: '10px', border: '1px solid red' }}>
           ⚠️ {errorMessage}
         </div>
       )}
-      
       {successMessage && (
-        <div style={{ 
-          color: 'green', 
-          backgroundColor: '#e6ffe6', 
-          padding: '10px', 
-          borderRadius: '5px', 
-          marginBottom: '10px',
-          border: '1px solid green'
-        }}>
+        <div style={{ color: 'green', backgroundColor: '#e6ffe6', padding: '10px', borderRadius: '5px', marginBottom: '10px', border: '1px solid green' }}>
           {successMessage}
         </div>
       )}
-
-      {/* Academic Year Selection */}
       <div style={{ marginBottom: '20px' }}>
         <label>Academic Year: </label>
-        <select 
-          value={selectedYear} 
-          onChange={(e) => setSelectedYear(e.target.value)}
-          style={{ marginLeft: '10px', padding: '5px' }}
-        >
+        <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} style={{ marginLeft: '10px', padding: '5px' }}>
           <option value="SE">SE (Second Year)</option>
           <option value="TE">TE (Third Year)</option>
           <option value="BE">BE (Fourth Year)</option>
         </select>
       </div>
-
-      {/* Number of Divisions */}
       <div style={{ marginBottom: '20px' }}>
         <label>Number of Divisions: </label>
         <input
@@ -222,37 +167,19 @@ const Syllabus = () => {
           min="1"
           max="10"
           value={numDivisions}
-          onChange={(e) => setNumDivisions(e.target.value)}
+          onChange={(e) => setNumDivisions(parseInt(e.target.value) || 1)}
           style={{ marginLeft: '10px', padding: '5px', width: '80px' }}
         />
       </div>
-
-      {/* Division Preview */}
       <div style={{ marginBottom: '20px' }}>
         <strong>Divisions: </strong>
         <span style={{ color: '#6c757d' }}>
-          {generateDivisionNames(selectedYear, parseInt(numDivisions))}
+          {generateDivisionNames(selectedYear, numDivisions)}
         </span>
       </div>
-
-      {/* Add Subject Button */}
-      <button 
-        type="button"
-        onClick={addSubject}
-        style={{
-          backgroundColor: '#007bff',
-          color: 'white',
-          border: 'none',
-          padding: '10px 20px',
-          borderRadius: '5px',
-          marginBottom: '20px',
-          cursor: 'pointer'
-        }}
-      >
+      <button type="button" onClick={addSubject} style={{ backgroundColor: '#007bff', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '5px', marginBottom: '20px', cursor: 'pointer' }}>
         Add Subject
       </button>
-
-      {/* Subjects Table */}
       {subjects.length > 0 && (
         <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '20px' }}>
           <thead>
@@ -274,12 +201,7 @@ const Syllabus = () => {
                     value={subject.courseCode}
                     onChange={(e) => updateSubject(index, 'courseCode', e.target.value)}
                     placeholder="CSE301"
-                    style={{ 
-                      width: '100%', 
-                      padding: '5px', 
-                      border: '1px solid #ccc',
-                      textTransform: 'uppercase'
-                    }}
+                    style={{ width: '100%', padding: '5px', border: '1px solid #ccc', textTransform: 'uppercase' }}
                     maxLength="10"
                   />
                 </td>
@@ -293,11 +215,7 @@ const Syllabus = () => {
                   />
                 </td>
                 <td style={{ border: '1px solid #dee2e6', padding: '8px' }}>
-                  <select
-                    value={subject.type}
-                    onChange={(e) => updateSubject(index, 'type', e.target.value)}
-                    style={{ width: '100%', padding: '5px' }}
-                  >
+                  <select value={subject.type} onChange={(e) => updateSubject(index, 'type', e.target.value)} style={{ width: '100%', padding: '5px' }}>
                     <option value="TH">TH (Theory)</option>
                     <option value="PR">PR (Practical)</option>
                     <option value="VAP">VAP (Value Added Program)</option>
@@ -325,36 +243,15 @@ const Syllabus = () => {
                   />
                 </td>
                 <td style={{ border: '1px solid #dee2e6', padding: '8px', textAlign: 'center' }}>
-                  <button
-                    type="button"
-                    onClick={() => removeSubject(index)}
-                    style={{
-                      backgroundColor: '#dc3545',
-                      color: 'white',
-                      border: 'none',
-                      padding: '5px 10px',
-                      borderRadius: '3px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Remove
-                  </button>
+                  <button type="button" onClick={() => removeSubject(index)} style={{ backgroundColor: '#dc3545', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '3px', cursor: 'pointer' }}>Remove</button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       )}
-
-      {/* Course Code Guidelines */}
       {subjects.length > 0 && (
-        <div style={{ 
-          backgroundColor: '#e3f2fd', 
-          padding: '10px', 
-          borderRadius: '5px', 
-          marginBottom: '20px',
-          fontSize: '14px'
-        }}>
+        <div style={{ backgroundColor: '#e3f2fd', padding: '10px', borderRadius: '5px', marginBottom: '20px', fontSize: '14px' }}>
           <strong>📋 Course Code Guidelines:</strong>
           <ul style={{ margin: '5px 0', paddingLeft: '20px' }}>
             <li>Use unique codes like CSE301, CSE301P, CSE302</li>
@@ -364,21 +261,7 @@ const Syllabus = () => {
           </ul>
         </div>
       )}
-
-      {/* Save Button */}
-      <button
-        onClick={handleSubmit}
-        style={{
-          backgroundColor: '#28a745',
-          color: 'white',
-          border: 'none',
-          padding: '12px 30px',
-          borderRadius: '5px',
-          cursor: 'pointer',
-          fontSize: '16px',
-          fontWeight: 'bold'
-        }}
-      >
+      <button onClick={handleSubmit} style={{ backgroundColor: '#28a745', color: 'white', border: 'none', padding: '12px 30px', borderRadius: '5px', cursor: 'pointer', fontSize: '16px', fontWeight: 'bold' }}>
         Save {selectedYear} Syllabus
       </button>
     </div>
