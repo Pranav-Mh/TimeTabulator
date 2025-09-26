@@ -11,22 +11,20 @@ router.get('/access-check', async (req, res) => {
   try {
     let status = await SyllabusStatus.findOne();
     if (!status || !status.lectureAccessAllowed) {
-      return res.status(403).json({ 
-        error: "Complete SE and TE syllabus first to access Lecture assignments",
-        canAccess: false 
-      });
+      return res.status(403).json({ error: 'Complete SE and TE syllabus first to access Lecture assignments', canAccess: false });
     }
     res.json({ canAccess: true });
   } catch (err) {
-    console.error('❌ Error checking lecture access:', err);
+    console.error('Error checking lecture access:', err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// Get theory subjects for a specific year and division
+// Get theory subjects with assignments
 router.get('/subjects/:year/:division', async (req, res) => {
   try {
     const { year, division } = req.params;
+    console.log(`\n🔍 Fetching subjects for ${year}-${division}`);
     
     const divisionDoc = await Division.findOne({ 
       academicYear: year, 
@@ -34,123 +32,130 @@ router.get('/subjects/:year/:division', async (req, res) => {
     });
     
     if (!divisionDoc) {
+      console.log(`❌ Division ${year}-${division} not found`);
       return res.status(404).json({ error: `Division ${year}-${division} not found` });
     }
+    console.log(`✅ Division: ${divisionDoc._id}`);
 
-    const subjects = await Subject.find({
-      academicYear: year,
+    const subjects = await Subject.find({ 
+      academicYear: year, 
       type: { $in: ['TH', 'VAP', 'OE'] }
     });
+    console.log(`📚 Subjects found: ${subjects.length}`);
 
-    const existingAssignments = await LectureAssignment.find({
-      divisionId: divisionDoc._id
-    }).populate('teacherId', 'name teacherId');
+    // Get assignments with proper population
+    const assignments = await LectureAssignment.find({ 
+      divisionId: divisionDoc._id 
+    }).populate('teacherId').populate('subjectId');
+    
+    console.log(`📋 Assignments found: ${assignments.length}`);
 
-    const subjectsWithAssignments = subjects.map(subject => {
-      const assignment = existingAssignments.find(
-        a => a.subjectId.toString() === subject._id.toString()
+    // Map subjects with assignments
+    const subjectsWithTeachers = subjects.map(subject => {
+      const assignment = assignments.find(a => 
+        a.subjectId && a.subjectId._id && 
+        a.subjectId._id.toString() === subject._id.toString()
       );
-      
-      return {
-        ...subject.toObject(),
-        assignedTeacher: assignment ? assignment.teacherId : null,
-        assignmentId: assignment ? assignment._id : null
+
+      const result = {
+        _id: subject._id,
+        name: subject.name,
+        type: subject.type,
+        hoursPerWeek: subject.hoursPerWeek,
+        academicYear: subject.academicYear,
+        assignedTeacher: null
       };
+
+      if (assignment && assignment.teacherId) {
+        result.assignedTeacher = {
+          _id: assignment.teacherId._id,
+          id: assignment.teacherId._id.toString(),
+          name: assignment.teacherId.name,
+          teacherId: assignment.teacherId.teacherId
+        };
+        console.log(`✅ ${subject.name} → ${assignment.teacherId.name}`);
+      } else {
+        console.log(`❌ ${subject.name} → No assignment`);
+      }
+
+      return result;
     });
 
-    res.json({
-      division: divisionDoc,
-      subjects: subjectsWithAssignments
+    console.log(`🎯 Response ready: ${subjectsWithTeachers.length} subjects`);
+    
+    res.json({ 
+      division: divisionDoc, 
+      subjects: subjectsWithTeachers 
     });
+
   } catch (err) {
-    console.error('❌ Error fetching subjects:', err);
+    console.error('❌ Error:', err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// Get all available divisions for a year
+// Get divisions
 router.get('/divisions/:year', async (req, res) => {
   try {
     const { year } = req.params;
-    const divisions = await Division.find({ academicYear: year }).select('name');
+    const divisions = await Division.find({ academicYear: year }).select('name _id');
     res.json(divisions);
   } catch (err) {
-    console.error('❌ Error fetching divisions:', err);
+    console.error('Error fetching divisions:', err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// Assign teacher to subject for specific division
+// Assign teacher
 router.post('/assign', async (req, res) => {
   try {
     const { subjectId, divisionId, teacherId } = req.body;
-
+    console.log(`\n🎯 ASSIGNMENT:`, { subjectId, divisionId, teacherId });
+    
     if (!subjectId || !divisionId || !teacherId) {
-      return res.status(400).json({ 
-        error: "Missing required fields: subjectId, divisionId, teacherId" 
-      });
+      return res.status(400).json({ error: 'Missing required fields' });
     }
 
     const subject = await Subject.findById(subjectId);
-    if (!subject) {
-      return res.status(404).json({ error: "Subject not found" });
-    }
-
     const teacher = await Teacher.findById(teacherId);
-    if (!teacher) {
-      return res.status(404).json({ error: "Teacher not found" });
-    }
-
-    // Check teacher workload (include both lecture and lab assignments)
-    const lectureAssignments = await LectureAssignment.find({ teacherId });
-    const LabAssignment = require('../models/LabAssignment');
-    const labAssignments = await LabAssignment.find({ teacherId });
     
-    let totalHours = 0;
+    if (!subject) return res.status(404).json({ error: 'Subject not found' });
+    if (!teacher) return res.status(404).json({ error: 'Teacher not found' });
+
+    console.log(`📚 Subject: ${subject.name}`);
+    console.log(`👨‍🏫 Teacher: ${teacher.name}`);
+
+    let assignment = await LectureAssignment.findOne({ subjectId, divisionId });
     
-    for (const assignment of lectureAssignments) {
-      totalHours += assignment.hoursPerWeek;
-    }
-    
-    for (const assignment of labAssignments) {
-      totalHours += assignment.hoursPerWeek;
-    }
-
-    if (totalHours + subject.hoursPerWeek > teacher.maxHours) {
-      return res.status(400).json({
-        error: `Teacher workload exceeded! ${teacher.name} has ${totalHours}/${teacher.maxHours} hours. Adding ${subject.hoursPerWeek} more hours would exceed limit.`,
-        type: 'workload_exceeded'
-      });
-    }
-
-    const existingAssignment = await LectureAssignment.findOne({
-      subjectId,
-      divisionId
-    });
-
-    if (existingAssignment) {
-      existingAssignment.teacherId = teacherId;
-      await existingAssignment.save();
-      res.json({ message: "Assignment updated successfully", assignment: existingAssignment });
+    if (assignment) {
+      assignment.teacherId = teacherId;
+      assignment.hoursPerWeek = subject.hoursPerWeek;
+      await assignment.save();
+      console.log(`✅ Updated assignment`);
     } else {
-      const newAssignment = new LectureAssignment({
+      assignment = new LectureAssignment({
         subjectId,
         divisionId,
         teacherId,
         academicYear: subject.academicYear,
         hoursPerWeek: subject.hoursPerWeek
       });
-
-      await newAssignment.save();
-      res.status(201).json({ message: "Assignment created successfully", assignment: newAssignment });
+      await assignment.save();
+      console.log(`✅ Created assignment`);
     }
+
+    res.json({ 
+      message: 'Assignment saved successfully', 
+      assignment 
+    });
+
   } catch (err) {
-    console.error('❌ Error creating assignment:', err);
+    console.error('❌ Assignment error:', err);
     res.status(400).json({ error: err.message });
   }
 });
 
-// Get combined teacher workload summary (lectures + labs)
+// Get teacher workload
 router.get('/teacher-workload', async (req, res) => {
   try {
     const teachers = await Teacher.find().select('name teacherId maxHours');
@@ -159,22 +164,11 @@ router.get('/teacher-workload', async (req, res) => {
     const labAssignments = await LabAssignment.find().populate('subjectId', 'hoursPerWeek');
 
     const workloadSummary = teachers.map(teacher => {
-      const teacherLectures = lectureAssignments.filter(
-        a => a.teacherId.toString() === teacher._id.toString()
-      );
-      const teacherLabs = labAssignments.filter(
-        a => a.teacherId.toString() === teacher._id.toString()
-      );
-      
-      const lectureHours = teacherLectures.reduce((sum, assignment) => {
-        return sum + (assignment.hoursPerWeek || 0);
-      }, 0);
-      
-      const labHours = teacherLabs.reduce((sum, assignment) => {
-        return sum + (assignment.hoursPerWeek || 0);
-      }, 0);
-      
-      const totalHours = lectureHours + labHours;
+      const teacherLectures = lectureAssignments.filter(a => a.teacherId.toString() === teacher._id.toString());
+      const teacherLabs = labAssignments.filter(a => a.teacherId.toString() === teacher._id.toString());
+
+      const lectureHours = teacherLectures.reduce((sum, assignment) => sum + (assignment.hoursPerWeek || 0), 0);
+      const labHours = teacherLabs.reduce((sum, assignment) => sum + (assignment.hoursPerWeek || 0), 0);
 
       return {
         teacherId: teacher._id,
@@ -182,15 +176,15 @@ router.get('/teacher-workload', async (req, res) => {
         teacherCode: teacher.teacherId,
         lectureHours,
         labHours,
-        totalHours,
+        totalHours: lectureHours + labHours,
         maxHours: teacher.maxHours,
-        availableHours: teacher.maxHours - totalHours
+        availableHours: teacher.maxHours - (lectureHours + labHours)
       };
     });
 
     res.json(workloadSummary);
   } catch (err) {
-    console.error('❌ Error fetching teacher workload:', err);
+    console.error('Error fetching teacher workload:', err);
     res.status(500).json({ error: err.message });
   }
 });

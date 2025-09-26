@@ -7,13 +7,13 @@ const Lecture = () => {
   const [divisions, setDivisions] = useState([]);
   const [teachers, setTeachers] = useState([]);
   const [subjects, setSubjects] = useState([]);
-  const [teacherWorkload, setTeacherWorkload] = useState([]); // ✅ FIXED: Use array like Lab component
+  const [teacherWorkload, setTeacherWorkload] = useState([]);
   const [loading, setLoading] = useState(false);
   const [canAccess, setCanAccess] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
-  // ✅ CHECK ACCESS FIRST
+  // CHECK ACCESS FIRST
   useEffect(() => {
     checkAccess();
   }, []);
@@ -28,13 +28,13 @@ const Lecture = () => {
     }
   };
 
-  // ✅ FETCH DIVISIONS (same as Lab component)
+  // FETCH DIVISIONS
   const fetchDivisions = async () => {
     try {
       const res = await axios.get(`http://localhost:5000/api/lectures/divisions/${selectedYear}`);
       setDivisions(res.data);
       if (res.data.length > 0) {
-        const firstDivision = res.data[0].name.split('-')[1]; // SE-A -> A
+        const firstDivision = res.data[0].name.split('-')[1];
         setSelectedDivision(firstDivision);
       }
     } catch (err) {
@@ -42,7 +42,7 @@ const Lecture = () => {
     }
   };
 
-  // ✅ FETCH TEACHERS
+  // FETCH TEACHERS
   const fetchTeachers = async () => {
     try {
       const response = await axios.get('http://localhost:5000/api/teachers');
@@ -52,59 +52,78 @@ const Lecture = () => {
     }
   };
 
-  // ✅ FETCH REAL SUBJECTS FROM DATABASE
+  // CRITICAL FIX: Fetch subjects with debugging
   const fetchSubjects = async () => {
     try {
       setLoading(true);
+      console.log(`\n🔍 FRONTEND: Fetching subjects for ${selectedYear}-${selectedDivision}`);
+      
       const res = await axios.get(`http://localhost:5000/api/lectures/subjects/${selectedYear}/${selectedDivision}`);
+      
+      console.log(`📡 FRONTEND: Received response:`, res.data);
+      console.log(`📚 FRONTEND: ${res.data.subjects?.length || 0} subjects received`);
+      
+      // Log each subject's assignment status
+      res.data.subjects?.forEach(subject => {
+        console.log(`   - ${subject.name}: ${subject.assignedTeacher ? `✅ ${subject.assignedTeacher.name} (${subject.assignedTeacher._id})` : '❌ No teacher'}`);
+      });
+      
+      // Directly set the subjects from backend - no processing needed
       setSubjects(res.data.subjects || []);
+      
     } catch (err) {
-      console.error('Error fetching lecture subjects:', err);
+      console.error('❌ Error fetching lecture subjects:', err);
       setSubjects([]);
     } finally {
       setLoading(false);
     }
   };
 
-  // ✅ FIXED: USE SAME WORKLOAD API AS LAB COMPONENT
+  // FETCH TEACHER WORKLOAD
   const fetchTeacherWorkload = async () => {
     try {
       const res = await axios.get('http://localhost:5000/api/lectures/teacher-workload');
-      setTeacherWorkload(res.data); // This should return array like Lab component
+      setTeacherWorkload(res.data);
     } catch (err) {
       console.error('Error fetching teacher workload:', err);
       setTeacherWorkload([]);
     }
   };
 
-  // ✅ REAL TEACHER ASSIGNMENT (saves to database)
+  // TEACHER ASSIGNMENT with debugging
   const handleTeacherAssignment = async (subjectId, teacherId) => {
     if (!teacherId) return;
-
+    
+    console.log(`\n🎯 FRONTEND: Assigning teacher ${teacherId} to subject ${subjectId}`);
+    
     setErrorMessage('');
     setSuccessMessage('');
-
+    
     try {
       const division = divisions.find(d => d.name === `${selectedYear}-${selectedDivision}`);
       
-      await axios.post('http://localhost:5000/api/lectures/assign', {
+      const response = await axios.post('http://localhost:5000/api/lectures/assign', {
         subjectId,
         divisionId: division._id,
         teacherId
       });
-
-      setSuccessMessage('✅ Lecture teacher assigned successfully!');
-      fetchSubjects();
-      fetchTeacherWorkload();
+      
+      console.log(`✅ FRONTEND: Assignment successful:`, response.data);
+      setSuccessMessage('Lecture teacher assigned successfully!');
+      
+      // Refetch data to get updated assignments
+      await fetchSubjects();
+      await fetchTeacherWorkload();
+      
       setTimeout(() => setSuccessMessage(''), 3000);
-
     } catch (err) {
+      console.error(`❌ FRONTEND: Assignment failed:`, err);
       const errorMsg = err.response?.data?.error || 'Failed to assign lecture teacher';
       setErrorMessage(errorMsg);
     }
   };
 
-  // ✅ LOAD DATA WHEN DEPENDENCIES CHANGE
+  // LOAD DATA WHEN DEPENDENCIES CHANGE
   useEffect(() => {
     if (canAccess) {
       fetchDivisions();
@@ -119,20 +138,13 @@ const Lecture = () => {
     }
   }, [selectedYear, selectedDivision, canAccess, divisions]);
 
-  // ✅ ACCESS CONTROL
+  // ACCESS CONTROL
   if (!canAccess) {
     return (
       <div style={{ padding: '20px', maxWidth: '1400px', margin: '0 auto' }}>
         <h1>Assign Teachers to Theory Subjects</h1>
-        <div style={{ 
-          color: 'red', 
-          backgroundColor: '#ffe6e6', 
-          padding: '20px', 
-          borderRadius: '8px',
-          textAlign: 'center',
-          marginTop: '50px'
-        }}>
-          <h2>🔒 Access Denied</h2>
+        <div style={{ color: 'red', backgroundColor: '#ffe6e6', padding: '20px', borderRadius: '8px', textAlign: 'center', marginTop: '50px' }}>
+          <h2>Access Denied</h2>
           <p>Complete SE and TE syllabus configuration before accessing lecture assignments.</p>
         </div>
       </div>
@@ -143,62 +155,31 @@ const Lecture = () => {
     <div style={{ padding: '20px', maxWidth: '1400px', margin: '0 auto' }}>
       {/* Header */}
       <div style={{ marginBottom: '30px' }}>
-        <h1 style={{ 
-          fontSize: '28px', 
-          fontWeight: 'bold', 
-          textAlign: 'center',
-          marginBottom: '8px',
-          color: '#333'
-        }}>
+        <h1 style={{ fontSize: '28px', fontWeight: 'bold', textAlign: 'center', marginBottom: '8px', color: '#333' }}>
           Assign Teachers to Theory Subjects
         </h1>
       </div>
 
       {/* Error/Success Messages */}
       {errorMessage && (
-        <div style={{ 
-          color: 'red', 
-          backgroundColor: '#ffe6e6', 
-          padding: '10px', 
-          borderRadius: '5px', 
-          marginBottom: '10px',
-          border: '1px solid red'
-        }}>
-          ⚠️ {errorMessage}
+        <div style={{ color: 'red', backgroundColor: '#ffe6e6', padding: '10px', borderRadius: '5px', marginBottom: '10px', border: '1px solid red' }}>
+          {errorMessage}
         </div>
       )}
-      
       {successMessage && (
-        <div style={{ 
-          color: 'green', 
-          backgroundColor: '#e6ffe6', 
-          padding: '10px', 
-          borderRadius: '5px', 
-          marginBottom: '10px',
-          border: '1px solid green'
-        }}>
+        <div style={{ color: 'green', backgroundColor: '#e6ffe6', padding: '10px', borderRadius: '5px', marginBottom: '10px', border: '1px solid green' }}>
           {successMessage}
         </div>
       )}
 
       {/* Year and Division Selection */}
-      <div style={{ 
-        display: 'flex', 
-        gap: '20px', 
-        marginBottom: '30px',
-        alignItems: 'center'
-      }}>
+      <div style={{ display: 'flex', gap: '20px', marginBottom: '30px', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <label style={{ fontWeight: '600', fontSize: '16px' }}>Year:</label>
-          <select
-            value={selectedYear}
+          <select 
+            value={selectedYear} 
             onChange={(e) => setSelectedYear(e.target.value)}
-            style={{
-              padding: '8px 12px',
-              border: '1px solid #ddd',
-              borderRadius: '4px',
-              fontSize: '14px'
-            }}
+            style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '14px' }}
           >
             <option value="SE">SE</option>
             <option value="TE">TE</option>
@@ -208,19 +189,16 @@ const Lecture = () => {
         
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <label style={{ fontWeight: '600', fontSize: '16px' }}>Division:</label>
-          <select
-            value={selectedDivision}
+          <select 
+            value={selectedDivision} 
             onChange={(e) => setSelectedDivision(e.target.value)}
-            style={{
-              padding: '8px 12px',
-              border: '1px solid #ddd',
-              borderRadius: '4px',
-              fontSize: '14px'
-            }}
+            style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '14px' }}
           >
             {divisions.map(division => {
-              const divLetter = division.name.split('-')[1]; // SE-A -> A
-              return <option key={division._id} value={divLetter}>{divLetter}</option>;
+              const divLetter = division.name.split('-')[1];
+              return (
+                <option key={division._id} value={divLetter}>{divLetter}</option>
+              );
             })}
           </select>
         </div>
@@ -236,102 +214,44 @@ const Lecture = () => {
       {/* Subject Assignment Table */}
       {!loading && subjects.length > 0 ? (
         <div style={{ marginBottom: '40px' }}>
-          <div style={{
-            backgroundColor: 'white',
-            borderRadius: '12px',
-            overflow: 'hidden',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-          }}>
+          <div style={{ backgroundColor: 'white', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ backgroundColor: '#f8f9fa' }}>
-                  <th style={{
-                    padding: '16px',
-                    textAlign: 'center',
-                    fontWeight: '600',
-                    borderBottom: '2px solid #dee2e6',
-                    color: '#495057'
-                  }}>
-                    Subject
-                  </th>
-                  <th style={{
-                    padding: '16px',
-                    textAlign: 'center',
-                    fontWeight: '600',
-                    borderBottom: '2px solid #dee2e6',
-                    color: '#495057'
-                  }}>
-                    Type
-                  </th>
-                  <th style={{
-                    padding: '16px',
-                    textAlign: 'center',
-                    fontWeight: '600',
-                    borderBottom: '2px solid #dee2e6',
-                    color: '#495057'
-                  }}>
-                    Hours/Week
-                  </th>
-                  <th style={{
-                    padding: '16px',
-                    textAlign: 'center',
-                    fontWeight: '600',
-                    borderBottom: '2px solid #dee2e6',
-                    color: '#495057'
-                  }}>
-                    Assign Teacher
-                  </th>
+                  <th style={{ padding: '16px', textAlign: 'center', fontWeight: '600', borderBottom: '2px solid #dee2e6', color: '#495057' }}>Subject</th>
+                  <th style={{ padding: '16px', textAlign: 'center', fontWeight: '600', borderBottom: '2px solid #dee2e6', color: '#495057' }}>Type</th>
+                  <th style={{ padding: '16px', textAlign: 'center', fontWeight: '600', borderBottom: '2px solid #dee2e6', color: '#495057' }}>Hours/Week</th>
+                  <th style={{ padding: '16px', textAlign: 'center', fontWeight: '600', borderBottom: '2px solid #dee2e6', color: '#495057' }}>Assign Teacher</th>
                 </tr>
               </thead>
               <tbody>
-                {subjects.map((subject, index) => (
-                  <tr key={subject._id} style={{ 
-                    borderBottom: index < subjects.length - 1 ? '1px solid #dee2e6' : 'none',
-                    backgroundColor: index % 2 === 0 ? '#fdfdfd' : 'white'
-                  }}>
-                    <td style={{
-                      padding: '16px',
-                      textAlign: 'center',
-                      fontSize: '14px'
-                    }}>
-                      {subject.name}
-                    </td>
-                    <td style={{
-                      padding: '16px',
-                      textAlign: 'center',
-                      fontSize: '14px'
-                    }}>
-                      {subject.type}
-                    </td>
-                    <td style={{
-                      padding: '16px',
-                      textAlign: 'center',
-                      fontSize: '14px'
-                    }}>
-                      {subject.hoursPerWeek}
-                    </td>
-                    <td style={{ padding: '16px', textAlign: 'center' }}>
-                      <select
-                        value={subject.assignedTeacher?._id || ''}
-                        onChange={(e) => handleTeacherAssignment(subject._id, e.target.value)}
-                        style={{
-                          padding: '8px 12px',
-                          border: '1px solid #ddd',
-                          borderRadius: '4px',
-                          fontSize: '14px',
-                          minWidth: '150px'
-                        }}
-                      >
-                        <option value="">Select Teacher</option>
-                        {teachers.map((teacher) => (
-                          <option key={teacher._id} value={teacher._id}>
-                            {teacher.name} ({teacher.teacherId})
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                  </tr>
-                ))}
+                {subjects.map((subject, index) => {
+                  // CRITICAL DEBUG: Log dropdown value
+                  const dropdownValue = subject.assignedTeacher?._id || subject.assignedTeacher?.id || '';
+                  console.log(`🔽 DROPDOWN for ${subject.name}: value="${dropdownValue}" (from ${subject.assignedTeacher ? JSON.stringify(subject.assignedTeacher) : 'null'})`);
+                  
+                  return (
+                    <tr key={subject._id} style={{ borderBottom: index < subjects.length - 1 ? '1px solid #dee2e6' : 'none', backgroundColor: index % 2 === 0 ? '#fdfdfd' : 'white' }}>
+                      <td style={{ padding: '16px', textAlign: 'center', fontSize: '14px' }}>{subject.name}</td>
+                      <td style={{ padding: '16px', textAlign: 'center', fontSize: '14px' }}>{subject.type}</td>
+                      <td style={{ padding: '16px', textAlign: 'center', fontSize: '14px' }}>{subject.hoursPerWeek}</td>
+                      <td style={{ padding: '16px', textAlign: 'center' }}>
+                        <select 
+                          value={dropdownValue}
+                          onChange={(e) => handleTeacherAssignment(subject._id, e.target.value)}
+                          style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '14px', minWidth: '150px' }}
+                        >
+                          <option value="">Select Teacher</option>
+                          {teachers.map(teacher => (
+                            <option key={teacher._id} value={teacher._id}>
+                              {teacher.name} ({teacher.teacherId})
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -342,119 +262,32 @@ const Lecture = () => {
         </div>
       )}
 
-      {/* ✅ FIXED: Teacher Workload Summary (same format as Lab component) */}
+      {/* Teacher Workload Summary */}
       {teacherWorkload.length > 0 && (
         <div>
-          <h2 style={{ 
-            fontSize: '20px', 
-            fontWeight: '600', 
-            marginBottom: '20px',
-            color: '#333'
-          }}>
+          <h2 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '20px', color: '#333' }}>
             Teacher Workload Summary
           </h2>
-
-          <div style={{
-            backgroundColor: 'white',
-            borderRadius: '12px',
-            overflow: 'hidden',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-          }}>
+          <div style={{ backgroundColor: 'white', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ backgroundColor: '#f8f9fa' }}>
-                  <th style={{
-                    padding: '16px',
-                    textAlign: 'center',
-                    fontWeight: '600',
-                    borderBottom: '2px solid #dee2e6',
-                    color: '#495057'
-                  }}>
-                    Teacher Name
-                  </th>
-                  <th style={{
-                    padding: '16px',
-                    textAlign: 'center',
-                    fontWeight: '600',
-                    borderBottom: '2px solid #dee2e6',
-                    color: '#495057'
-                  }}>
-                    Lecture Hours
-                  </th>
-                  <th style={{
-                    padding: '16px',
-                    textAlign: 'center',
-                    fontWeight: '600',
-                    borderBottom: '2px solid #dee2e6',
-                    color: '#495057'
-                  }}>
-                    Lab Hours
-                  </th>
-                  <th style={{
-                    padding: '16px',
-                    textAlign: 'center',
-                    fontWeight: '600',
-                    borderBottom: '2px solid #dee2e6',
-                    color: '#495057'
-                  }}>
-                    Total Hours
-                  </th>
-                  <th style={{
-                    padding: '16px',
-                    textAlign: 'center',
-                    fontWeight: '600',
-                    borderBottom: '2px solid #dee2e6',
-                    color: '#495057'
-                  }}>
-                    Available Hours
-                  </th>
+                  <th style={{ padding: '16px', textAlign: 'center', fontWeight: '600', borderBottom: '2px solid #dee2e6', color: '#495057' }}>Teacher Name</th>
+                  <th style={{ padding: '16px', textAlign: 'center', fontWeight: '600', borderBottom: '2px solid #dee2e6', color: '#495057' }}>Lecture Hours</th>
+                  <th style={{ padding: '16px', textAlign: 'center', fontWeight: '600', borderBottom: '2px solid #dee2e6', color: '#495057' }}>Lab Hours</th>
+                  <th style={{ padding: '16px', textAlign: 'center', fontWeight: '600', borderBottom: '2px solid #dee2e6', color: '#495057' }}>Total Hours</th>
+                  <th style={{ padding: '16px', textAlign: 'center', fontWeight: '600', borderBottom: '2px solid #dee2e6', color: '#495057' }}>Available Hours</th>
                 </tr>
               </thead>
               <tbody>
-                {/* ✅ FIXED: Use same structure as Lab component */}
                 {teacherWorkload.map((teacher, index) => (
-                  <tr key={teacher.teacherId} style={{ 
-                    borderBottom: index < teacherWorkload.length - 1 ? '1px solid #dee2e6' : 'none',
-                    backgroundColor: index % 2 === 0 ? '#fdfdfd' : 'white'
-                  }}>
-                    <td style={{
-                      padding: '16px',
-                      textAlign: 'center',
-                      fontSize: '14px',
-                      fontWeight: '500'
-                    }}>
-                      {teacher.name}
-                    </td>
-                    <td style={{
-                      padding: '16px',
-                      textAlign: 'center',
-                      fontSize: '14px'
-                    }}>
-                      {teacher.lectureHours}
-                    </td>
-                    <td style={{
-                      padding: '16px',
-                      textAlign: 'center',
-                      fontSize: '14px'
-                    }}>
-                      {teacher.labHours}
-                    </td>
-                    <td style={{
-                      padding: '16px',
-                      textAlign: 'center',
-                      fontSize: '14px'
-                    }}>
-                      {teacher.totalHours}/{teacher.maxHours}
-                    </td>
-                    <td style={{
-                      padding: '16px',
-                      textAlign: 'center',
-                      fontSize: '14px',
-                      color: teacher.availableHours <= 0 ? '#d32f2f' : teacher.availableHours <= 2 ? '#ff9800' : '#2e7d32',
-                      fontWeight: teacher.availableHours <= 0 ? '600' : '400'
-                    }}>
-                      {teacher.availableHours}
-                      {teacher.availableHours <= 0 && <span> ⚠️</span>}
+                  <tr key={teacher.teacherId} style={{ borderBottom: index < teacherWorkload.length - 1 ? '1px solid #dee2e6' : 'none', backgroundColor: index % 2 === 0 ? '#fdfdfd' : 'white' }}>
+                    <td style={{ padding: '16px', textAlign: 'center', fontSize: '14px', fontWeight: '500' }}>{teacher.name}</td>
+                    <td style={{ padding: '16px', textAlign: 'center', fontSize: '14px' }}>{teacher.lectureHours}</td>
+                    <td style={{ padding: '16px', textAlign: 'center', fontSize: '14px' }}>{teacher.labHours}</td>
+                    <td style={{ padding: '16px', textAlign: 'center', fontSize: '14px' }}>{teacher.totalHours}/{teacher.maxHours}</td>
+                    <td style={{ padding: '16px', textAlign: 'center', fontSize: '14px', color: teacher.availableHours < 0 ? '#d32f2f' : teacher.availableHours < 2 ? '#ff9800' : '#2e7d32', fontWeight: teacher.availableHours < 0 ? '600' : '400' }}>
+                      {teacher.availableHours < 0 ? <span>⚠{teacher.availableHours}</span> : <span>{teacher.availableHours}</span>}
                     </td>
                   </tr>
                 ))}

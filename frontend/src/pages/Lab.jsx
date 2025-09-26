@@ -66,7 +66,32 @@ const Lab = () => {
   const fetchSubjects = async () => {
     try {
       const res = await axios.get(`http://localhost:5000/api/labs/subjects/${selectedYear}/${selectedDivision}`);
-      setSubjects(res.data.subjects || []);
+      
+      // CRITICAL: Process subjects to ensure batch assignments are properly structured
+      const processedSubjects = res.data.subjects.map(subject => {
+        const processedBatches = subject.batches?.map(batch => {
+          // If there's an assigned teacher, ensure proper structure
+          if (batch.assignedTeacher && batch.assignedTeacher._id) {
+            return {
+              ...batch,
+              assignedTeacher: {
+                id: batch.assignedTeacher._id,
+                _id: batch.assignedTeacher._id,
+                name: batch.assignedTeacher.name,
+                teacherId: batch.assignedTeacher.teacherId
+              }
+            };
+          }
+          return batch;
+        }) || [];
+        
+        return {
+          ...subject,
+          batches: processedBatches
+        };
+      });
+      
+      setSubjects(processedSubjects);
     } catch (err) {
       console.error('Error fetching lab subjects:', err);
       setSubjects([]);
@@ -84,10 +109,10 @@ const Lab = () => {
 
   const handleTeacherAssignment = async (subjectId, batchNumber, teacherId) => {
     if (!teacherId) return;
-
+    
     setErrorMessage('');
     setSuccessMessage('');
-
+    
     try {
       const division = divisions.find(d => d.name === `${selectedYear}-${selectedDivision}`);
       
@@ -97,12 +122,41 @@ const Lab = () => {
         batchNumber,
         teacherId
       });
-
-      setSuccessMessage('✅ Lab teacher assigned successfully!');
+      
+      setSuccessMessage('Lab teacher assigned successfully!');
+      
+      // Update UI immediately before refetching
+      const selectedTeacher = teachers.find(t => t._id === teacherId);
+      if (selectedTeacher) {
+        setSubjects(prevSubjects => 
+          prevSubjects.map(subject => 
+            subject._id === subjectId 
+              ? { 
+                  ...subject, 
+                  batches: subject.batches.map(batch =>
+                    batch.batchNumber === batchNumber
+                      ? {
+                          ...batch,
+                          assignedTeacher: {
+                            id: selectedTeacher._id,
+                            _id: selectedTeacher._id,
+                            name: selectedTeacher.name,
+                            teacherId: selectedTeacher.teacherId
+                          }
+                        }
+                      : batch
+                  )
+                }
+              : subject
+          )
+        );
+      }
+      
+      // Refetch data to ensure consistency
       fetchSubjects();
       fetchTeacherWorkload();
+      
       setTimeout(() => setSuccessMessage(''), 3000);
-
     } catch (err) {
       const errorMsg = err.response?.data?.error || 'Failed to assign lab teacher';
       setErrorMessage(errorMsg);
@@ -113,15 +167,8 @@ const Lab = () => {
     return (
       <div className="lab-page">
         <h1>Assign Teachers for Practical Lab</h1>
-        <div style={{ 
-          color: 'red', 
-          backgroundColor: '#ffe6e6', 
-          padding: '20px', 
-          borderRadius: '8px',
-          textAlign: 'center',
-          marginTop: '50px'
-        }}>
-          <h2>🔒 Access Denied</h2>
+        <div style={{ color: 'red', backgroundColor: '#ffe6e6', padding: '20px', borderRadius: '8px', textAlign: 'center', marginTop: '50px' }}>
+          <h2>Access Denied</h2>
           <p>Complete both SE and TE syllabus configuration before accessing lab assignments.</p>
         </div>
       </div>
@@ -134,27 +181,12 @@ const Lab = () => {
 
       {/* Error/Success Messages */}
       {errorMessage && (
-        <div style={{ 
-          color: 'red', 
-          backgroundColor: '#ffe6e6', 
-          padding: '10px', 
-          borderRadius: '5px', 
-          marginBottom: '10px',
-          border: '1px solid red'
-        }}>
-          ⚠️ {errorMessage}
+        <div style={{ color: 'red', backgroundColor: '#ffe6e6', padding: '10px', borderRadius: '5px', marginBottom: '10px', border: '1px solid red' }}>
+          {errorMessage}
         </div>
       )}
-      
       {successMessage && (
-        <div style={{ 
-          color: 'green', 
-          backgroundColor: '#e6ffe6', 
-          padding: '10px', 
-          borderRadius: '5px', 
-          marginBottom: '10px',
-          border: '1px solid green'
-        }}>
+        <div style={{ color: 'green', backgroundColor: '#e6ffe6', padding: '10px', borderRadius: '5px', marginBottom: '10px', border: '1px solid green' }}>
           {successMessage}
         </div>
       )}
@@ -165,7 +197,7 @@ const Lab = () => {
           <label>Year: </label>
           <select 
             value={selectedYear} 
-            onChange={(e) => setSelectedYear(e.target.value)}
+            onChange={(e) => setSelectedYear(e.target.value)} 
             style={{ marginLeft: '10px', padding: '5px' }}
           >
             <option value="SE">SE</option>
@@ -178,12 +210,14 @@ const Lab = () => {
           <label>Division: </label>
           <select 
             value={selectedDivision} 
-            onChange={(e) => setSelectedDivision(e.target.value)}
+            onChange={(e) => setSelectedDivision(e.target.value)} 
             style={{ marginLeft: '10px', padding: '5px' }}
           >
             {divisions.map(division => {
               const divLetter = division.name.split('-')[1]; // SE-A -> A
-              return <option key={division._id} value={divLetter}>{divLetter}</option>;
+              return (
+                <option key={division._id} value={divLetter}>{divLetter}</option>
+              );
             })}
           </select>
         </div>
@@ -208,8 +242,8 @@ const Lab = () => {
                 <td style={{ border: '1px solid #dee2e6', padding: '10px', textAlign: 'center' }}>{subject.hoursPerWeek}</td>
                 {subject.batches?.map(batch => (
                   <td key={batch.batchNumber} style={{ border: '1px solid #dee2e6', padding: '8px' }}>
-                    <select
-                      value={batch.assignedTeacher?._id || ''}
+                    <select 
+                      value={batch.assignedTeacher?._id || batch.assignedTeacher?.id || ''} 
                       onChange={(e) => handleTeacherAssignment(subject._id, batch.batchNumber, e.target.value)}
                       style={{ width: '100%', padding: '5px' }}
                     >
@@ -253,14 +287,8 @@ const Lab = () => {
                   <td style={{ border: '1px solid #dee2e6', padding: '8px', textAlign: 'center' }}>{teacher.lectureHours}</td>
                   <td style={{ border: '1px solid #dee2e6', padding: '8px', textAlign: 'center' }}>{teacher.labHours}</td>
                   <td style={{ border: '1px solid #dee2e6', padding: '8px', textAlign: 'center' }}>{teacher.totalHours}/{teacher.maxHours}</td>
-                  <td style={{ 
-                    border: '1px solid #dee2e6', 
-                    padding: '8px', 
-                    textAlign: 'center',
-                    color: teacher.availableHours <= 0 ? 'red' : 'green'
-                  }}>
-                    {teacher.availableHours}
-                    {teacher.availableHours <= 0 && <span> ⚠️</span>}
+                  <td style={{ border: '1px solid #dee2e6', padding: '8px', textAlign: 'center', color: teacher.availableHours < 0 ? 'red' : 'green' }}>
+                    {teacher.availableHours < 0 ? <span>⚠{teacher.availableHours}</span> : <span>{teacher.availableHours}</span>}
                   </td>
                 </tr>
               ))}
