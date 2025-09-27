@@ -17,7 +17,7 @@ const resourcesRoutes = require('./routes/resources');
 const navigationRoutes = require('./routes/navigation');
 const restrictionsRoutes = require('./routes/restrictions');
 const timetableRoutes = require('./routes/timetable'); // NEW
-
+const generatorRoutes = require('./routes/generator');
 // Route usage
 app.use('/api/teachers', teacherRoutes);
 app.use('/api/syllabus', syllabusRoutes);
@@ -28,5 +28,5 @@ app.use('/api/resources', resourcesRoutes);
 app.use('/api/navigation', navigationRoutes);
 app.use('/api/restrictions', restrictionsRoutes);
 app.use('/api/timetable', timetableRoutes); // NEW
-
+app.use('/api/generator', generatorRoutes);
 module.exports = app;

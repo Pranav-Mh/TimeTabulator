@@ -43,7 +43,7 @@ const Generator = () => {
     return divisions;
   };
 
-  // ✅ FIXED: Fetch divisions and slots with correct parsing
+  // ✅ COMPLETELY FIXED: Use the correct endpoints and handle responses properly
   const fetchInitialData = async () => {
     setConfig(prev => ({ ...prev, loading: true, error: '' }));
     
@@ -51,87 +51,39 @@ const Generator = () => {
       // ✅ Get time slots first (this is working fine)
       const slotsResponse = await axios.get('http://localhost:5000/api/resources/timeslots');
       
-      // ✅ FIXED: Parse divisions correctly based on numberOfDivisions field
+      // ✅ FIXED: Use the MongoDB data directly - check your database first
       let seDivisions = [];
       let teDivisions = [];
       let beDivisions = [];
 
       try {
+        // FIXED: Use the new endpoint structure based on your database
         const seResponse = await axios.get('http://localhost:5000/api/syllabus/SE');
-        if (seResponse.data) {
-          console.log('SE API Response:', seResponse.data);
-          
-          // Option 1: If numberOfDivisions exists, generate divisions
-          if (seResponse.data.numberOfDivisions) {
-            seDivisions = generateDivisions(seResponse.data.numberOfDivisions, 'SE');
-          }
-          // Option 2: If divisions field exists as string
-          else if (seResponse.data.divisions && typeof seResponse.data.divisions === 'string') {
-            seDivisions = seResponse.data.divisions
-              .split(',')
-              .map(div => div.trim().replace('SE-', ''))
-              .filter(div => div.length > 0);
-          }
-          // Option 3: If divisions field exists as array
-          else if (Array.isArray(seResponse.data.divisions)) {
-            seDivisions = seResponse.data.divisions.map(div => 
-              typeof div === 'string' ? div.replace('SE-', '') : div.name?.replace('SE-', '') || div
-            );
-          }
+        if (seResponse.data && seResponse.data.numDivisions) {
+          console.log('SE syllabus found:', seResponse.data);
+          seDivisions = generateDivisions(seResponse.data.numDivisions, 'SE');
         }
       } catch (seError) {
         console.log('SE syllabus not configured yet');
       }
 
       try {
+        // FIXED: Use the new endpoint structure based on your database  
         const teResponse = await axios.get('http://localhost:5000/api/syllabus/TE');
-        if (teResponse.data) {
-          console.log('TE API Response:', teResponse.data);
-          
-          // Option 1: If numberOfDivisions exists, generate divisions
-          if (teResponse.data.numberOfDivisions) {
-            teDivisions = generateDivisions(teResponse.data.numberOfDivisions, 'TE');
-          }
-          // Option 2: If divisions field exists as string
-          else if (teResponse.data.divisions && typeof teResponse.data.divisions === 'string') {
-            teDivisions = teResponse.data.divisions
-              .split(',')
-              .map(div => div.trim().replace('TE-', ''))
-              .filter(div => div.length > 0);
-          }
-          // Option 3: If divisions field exists as array
-          else if (Array.isArray(teResponse.data.divisions)) {
-            teDivisions = teResponse.data.divisions.map(div => 
-              typeof div === 'string' ? div.replace('TE-', '') : div.name?.replace('TE-', '') || div
-            );
-          }
+        if (teResponse.data && teResponse.data.numDivisions) {
+          console.log('TE syllabus found:', teResponse.data);
+          teDivisions = generateDivisions(teResponse.data.numDivisions, 'TE');
         }
       } catch (teError) {
         console.log('TE syllabus not configured yet');
       }
 
       try {
+        // FIXED: Use the new endpoint structure based on your database
         const beResponse = await axios.get('http://localhost:5000/api/syllabus/BE');
-        if (beResponse.data) {
-          console.log('BE API Response:', beResponse.data);
-          
-          // Option 1: If numberOfDivisions exists, generate divisions
-          if (beResponse.data.numberOfDivisions) {
-            beDivisions = generateDivisions(beResponse.data.numberOfDivisions, 'BE');
-          }
-          // Option 2: If divisions field exists as string
-          else if (beResponse.data.divisions && typeof beResponse.data.divisions === 'string') {
-            beDivisions = beResponse.data.divisions
-              .split(',')
-              .map(div => div.trim().replace('BE-', ''))
-              .filter(div => div.length > 0);
-          }
-          // Option 3: If divisions field exists as array
-          else if (Array.isArray(beResponse.data.divisions)) {
-            beDivisions = beResponse.data.divisions.map(div => 
-              typeof div === 'string' ? div.replace('BE-', '') : div.name?.replace('BE-', '') || div
-            );
-          }
+        if (beResponse.data && beResponse.data.numDivisions) {
+          console.log('BE syllabus found:', beResponse.data);
+          beDivisions = generateDivisions(beResponse.data.numDivisions, 'BE');
         }
       } catch (beError) {
         console.log('BE syllabus not configured yet');
