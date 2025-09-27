@@ -829,6 +829,13 @@ const TimetableRestrictions = () => {
     }
   };
 
+  // Helper to flatten the year bookings for the new display format
+  const flattenedYearBookings = Object.entries(existingYearBookings)
+    .flatMap(([activityName, bookings]) => 
+      bookings.map(booking => ({ ...booking, activityName }))
+    );
+
+
   return (
     <div style={{ padding: '20px', maxWidth: '1400px', margin: '0 auto' }}>
       {/* Header */}
@@ -1530,7 +1537,7 @@ const TimetableRestrictions = () => {
                         gap: '8px'
                       }}>
                         {restriction.type === 'time' ? '⏰' : 
-                         restriction.type === 'teacher' ? '👨‍🏫' : '📚'} 
+                          restriction.type === 'teacher' ? '👨‍🏫' : '📚'} 
                         {restriction.restrictionName || restriction.teacherName || restriction.subjectName}
                       </h4>
                       <div style={{ color: '#6c757d', fontSize: '14px' }}>
@@ -1804,6 +1811,9 @@ const TimetableRestrictions = () => {
 
             <div style={{ marginBottom: '16px' }}>
               <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600' }}>Days</label>
+              <p style={{ fontSize: '12px', color: '#6c757d', margin: '0 0 8px 0', fontStyle: 'italic' }}>
+                🔒 Feature to select particular days is locked for now.
+              </p>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 {['All days', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map(day => (
                   <label key={day} style={{
@@ -1812,15 +1822,17 @@ const TimetableRestrictions = () => {
                     padding: '6px 12px',
                     border: `1px solid ${globalBooking.days.includes(day) ? '#007bff' : '#ddd'}`,
                     borderRadius: '20px',
-                    cursor: 'pointer',
+                    cursor: day !== 'All days' ? 'not-allowed' : 'pointer',
                     backgroundColor: globalBooking.days.includes(day) ? '#e3f2fd' : 'white',
-                    fontSize: '14px'
+                    fontSize: '14px',
+                    opacity: day !== 'All days' ? 0.6 : 1
                   }}>
                     <input
                       type="checkbox"
                       checked={globalBooking.days.includes(day)}
                       onChange={() => toggleDaySelection(day, 'global')}
                       style={{ marginRight: '6px' }}
+                      disabled={day !== 'All days'}
                     />
                     {day}
                   </label>
@@ -1919,7 +1931,7 @@ const TimetableRestrictions = () => {
             </div>
 
             {/* Existing Year Bookings Display with Delete Buttons */}
-            {Object.keys(existingYearBookings).length > 0 && (
+            {flattenedYearBookings.length > 0 && (
               <div style={{
                 backgroundColor: '#f8f9fa',
                 padding: '16px',
@@ -1929,6 +1941,7 @@ const TimetableRestrictions = () => {
               }}>
                 <h4 style={{ 
                   marginBottom: '12px', 
+                  marginTop: 0,
                   color: '#495057',
                   display: 'flex',
                   alignItems: 'center',
@@ -1940,47 +1953,40 @@ const TimetableRestrictions = () => {
                 {yearBookingsLoading ? (
                   <div style={{ color: '#6c757d', fontStyle: 'italic' }}>Loading bookings...</div>
                 ) : (
-                  <div style={{ fontSize: '14px' }}>
-                    {Object.entries(existingYearBookings).map(([activityName, bookings]) => (
-                      <div key={activityName} style={{ marginBottom: '12px' }}>
-                        <strong style={{ color: '#495057' }}>• {activityName}:</strong>
-                        <div style={{ marginLeft: '16px', color: '#6c757d' }}>
-                          {bookings.map((booking, index) => (
-                            <div key={index} style={{ 
-                              display: 'flex', 
-                              justifyContent: 'space-between', 
-                              alignItems: 'center',
-                              padding: '4px 0'
-                            }}>
-                              <span>
-                                - {booking.day} (Slot {booking.slot}: {getSlotTimeRange(booking.slot)})
-                              </span>
-                              <button
-                                onClick={() => deleteSpecificBooking({
-                                  id: booking.bookingId,
-                                  activityName: activityName,
-                                  day: booking.day,
-                                  slot: booking.slot,
-                                  scope: 'year-specific',
-                                  year: yearBooking.year
-                                })}
-                                style={{
-                                  backgroundColor: '#dc3545',
-                                  color: 'white',
-                                  border: 'none',
-                                  padding: '2px 6px',
-                                  borderRadius: '4px',
-                                  cursor: 'pointer',
-                                  fontSize: '10px',
-                                  marginLeft: '8px'
-                                }}
-                                title={`Delete ${activityName} booking for ${booking.day}, Slot ${booking.slot}`}
-                              >
-                                🗑️
-                              </button>
-                            </div>
-                          ))}
-                        </div>
+                  <div>
+                    {flattenedYearBookings.map((booking, index) => (
+                      <div key={index} style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '6px 0',
+                        fontSize: '14px',
+                        color: '#495057',
+                        borderBottom: index < flattenedYearBookings.length - 1 ? '1px solid #e9ecef' : 'none'
+                      }}>
+                        <span>- {booking.day} (Slot {booking.slot}: {getSlotTimeRange(booking.slot)})</span>
+                        <button
+                          onClick={() => deleteSpecificBooking({
+                            id: booking.bookingId,
+                            activityName: booking.activityName,
+                            day: booking.day,
+                            slot: booking.slot,
+                            scope: 'year-specific',
+                            year: yearBooking.year
+                          })}
+                          style={{
+                            backgroundColor: 'transparent',
+                            color: '#dc3545',
+                            border: 'none',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '16px',
+                          }}
+                          title={`Delete ${booking.activityName} booking for ${booking.day}, Slot ${booking.slot}`}
+                        >
+                          🗑️
+                        </button>
                       </div>
                     ))}
                   </div>
