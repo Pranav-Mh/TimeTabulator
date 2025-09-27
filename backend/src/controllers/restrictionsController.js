@@ -73,14 +73,16 @@ const syncSlotTableWithRestrictions = async () => {
     const slotBookings = {};
     
     globalRestrictions.forEach(restriction => {
-      restriction.timeSlots.forEach(slotNum => {
-        // For global restrictions, they apply to all days
-        slotBookings[slotNum] = {
-          bookedBy: restriction.restrictionName,
-          bookingScope: 'global',
-          bookingAffectedYears: restriction.affectedYears || []
-        };
-      });
+      if (restriction.timeSlots && restriction.timeSlots.length > 0) {
+        restriction.timeSlots.forEach(slotNum => {
+          // For global restrictions, they apply to all days
+          slotBookings[slotNum] = {
+            bookedBy: restriction.restrictionName,
+            bookingScope: 'global',
+            bookingAffectedYears: restriction.affectedYears || []
+          };
+        });
+      }
     });
 
     console.log('Slot bookings map:', slotBookings);
@@ -153,17 +155,19 @@ const getGlobalBookings = async (req, res) => {
       const activityName = booking.restrictionName;
       
       // Create entry for each day-slot combination
-      booking.days.forEach(day => {
-        booking.timeSlots.forEach(slot => {
-          bookingsList.push({
-            id: booking._id,
-            activityName: activityName,
-            day: day,
-            slot: slot,
-            displayText: `${day}, Slot ${slot}: ${activityName}`
+      if (booking.days && booking.timeSlots) {
+        booking.days.forEach(day => {
+          booking.timeSlots.forEach(slot => {
+            bookingsList.push({
+              id: booking._id,
+              activityName: activityName,
+              day: day,
+              slot: slot,
+              displayText: `${day}, Slot ${slot}: ${activityName}`
+            });
           });
         });
-      });
+      }
     });
 
     console.log(`✅ Found ${bookingsList.length} global booking entries`);
@@ -179,7 +183,7 @@ const getGlobalBookings = async (req, res) => {
   }
 };
 
-// Get year-wise bookings for specific year
+// ✅ COMPLETELY FIXED: Get year-wise bookings for specific year
 const getYearWiseBookings = async (req, res) => {
   try {
     const { year } = req.params;
@@ -190,41 +194,52 @@ const getYearWiseBookings = async (req, res) => {
 
     console.log(`🔍 Fetching year-wise bookings for: ${year}`);
 
+    // ✅ FIXED: Proper query for year-wise bookings
     const yearBookings = await TimetableRestriction.find({
       type: 'time',
       scope: 'year-specific',
-      affectedYears: { $in: [year] },
+      affectedYears: { $in: [year] }, // ✅ FIXED: Use the full year string like "3rd Year"
       isActive: true
     }).sort({ createdAt: -1 });
 
-    // Group by activity name
-    const groupedBookings = {};
+    console.log(`📋 Found ${yearBookings.length} year-wise restriction documents for ${year}`);
+    console.log('Year-wise bookings found:', yearBookings.map(b => ({
+      name: b.restrictionName,
+      slots: b.timeSlots,
+      days: b.days,
+      affectedYears: b.affectedYears
+    })));
+
+    // ✅ FIXED: Format as individual day-slot entries like global bookings
+    const bookingsList = [];
     
     yearBookings.forEach(booking => {
       const activityName = booking.restrictionName;
       
-      if (!groupedBookings[activityName]) {
-        groupedBookings[activityName] = [];
-      }
-      
-      // Add each day-slot combination
-      booking.days.forEach(day => {
-        booking.timeSlots.forEach(slot => {
-          groupedBookings[activityName].push({
-            day: day,
-            slot: slot,
-            bookingId: booking._id
+      // Create entry for each day-slot combination
+      if (booking.days && booking.timeSlots) {
+        booking.days.forEach(day => {
+          booking.timeSlots.forEach(slot => {
+            bookingsList.push({
+              id: booking._id,
+              activityName: activityName,
+              day: day,
+              slot: slot,
+              year: year,
+              displayText: `${day}, Slot ${slot}: ${activityName} (${year})`
+            });
           });
         });
-      });
+      }
     });
 
-    console.log(`✅ Found ${Object.keys(groupedBookings).length} activities for ${year}:`, Object.keys(groupedBookings));
+    console.log(`✅ Generated ${bookingsList.length} individual booking entries for ${year}:`, 
+      bookingsList.map(b => b.displayText));
 
     res.json({
       year: year,
-      bookings: groupedBookings,
-      totalActivities: Object.keys(groupedBookings).length
+      bookings: bookingsList,
+      totalEntries: bookingsList.length
     });
 
   } catch (error) {
@@ -252,58 +267,30 @@ const deleteSpecificBooking = async (req, res) => {
       return res.status(404).json({ error: 'Booking not found' });
     }
 
-    // ✅ FIXED: For global bookings, check if this is the only day-slot combination
-    if (scope === 'global') {
-      const totalCombinations = restriction.days.length * restriction.timeSlots.length;
-      
-      if (totalCombinations === 1) {
-        // Only one combination - delete entire restriction
-        restriction.isActive = false;
-        await restriction.save();
-        console.log(`✅ Deleted entire global restriction (only one day-slot combination)`);
-      } else if (restriction.days.includes('All days')) {
-        // Global booking with 'All days' - remove the specific slot
-        restriction.timeSlots = restriction.timeSlots.filter(s => s !== slot);
-        if (restriction.timeSlots.length === 0) {
-          restriction.isActive = false;
-        }
-        await restriction.save();
-        console.log(`✅ Removed slot ${slot} from global 'All days' booking`);
-      } else {
-        // Complex case - handle day-slot removal
-        if (restriction.days.length > 1 && restriction.days.includes(day)) {
-          restriction.days = restriction.days.filter(d => d !== day);
-        } else if (restriction.timeSlots.length > 1 && restriction.timeSlots.includes(slot)) {
-          restriction.timeSlots = restriction.timeSlots.filter(s => s !== slot);
-        } else {
-          restriction.isActive = false;
-        }
-        await restriction.save();
-        console.log(`✅ Updated global restriction`);
-      }
-      
-      // ✅ CRITICAL: Sync slot table after global booking deletion
-      await syncSlotTableWithRestrictions();
-      
+    // ✅ FIXED: For both global and year-wise bookings
+    const totalCombinations = (restriction.days?.length || 0) * (restriction.timeSlots?.length || 0);
+    
+    if (totalCombinations === 1) {
+      // Only one combination - delete entire restriction
+      restriction.isActive = false;
+      await restriction.save();
+      console.log(`✅ Deleted entire restriction (only one day-slot combination)`);
     } else {
-      // Year-specific booking deletion (existing logic)
-      const totalCombinations = restriction.days.length * restriction.timeSlots.length;
-      
-      if (totalCombinations === 1) {
-        restriction.isActive = false;
-        await restriction.save();
-        console.log(`✅ Deleted entire year-specific restriction`);
+      // Multiple combinations - remove this specific day-slot
+      if (restriction.days && restriction.days.length > 1 && restriction.days.includes(day)) {
+        restriction.days = restriction.days.filter(d => d !== day);
+      } else if (restriction.timeSlots && restriction.timeSlots.length > 1 && restriction.timeSlots.includes(slot)) {
+        restriction.timeSlots = restriction.timeSlots.filter(s => s !== slot);
       } else {
-        if (restriction.days.length > 1 && restriction.days.includes(day)) {
-          restriction.days = restriction.days.filter(d => d !== day);
-        } else if (restriction.timeSlots.length > 1 && restriction.timeSlots.includes(slot)) {
-          restriction.timeSlots = restriction.timeSlots.filter(s => s !== slot);
-        } else {
-          restriction.isActive = false;
-        }
-        await restriction.save();
-        console.log(`✅ Updated year-specific restriction`);
+        restriction.isActive = false;
       }
+      await restriction.save();
+      console.log(`✅ Updated restriction by removing ${day}, Slot ${slot}`);
+    }
+
+    // ✅ CRITICAL: For global bookings, sync slot table
+    if (scope === 'global') {
+      await syncSlotTableWithRestrictions();
     }
 
     res.json({ 
@@ -317,7 +304,60 @@ const deleteSpecificBooking = async (req, res) => {
   }
 };
 
-// Add new restriction
+// ✅ ENHANCED: Check for time slot conflicts - PREVENT year-wise booking on global slots
+const checkTimeSlotConflicts = async (timeSlots, days, scope, affectedYears) => {
+  try {
+    let conflictQuery = {
+      type: 'time',
+      isActive: true,
+      timeSlots: { $in: timeSlots },
+      days: { $in: days }
+    };
+
+    // ✅ CRITICAL: For year-specific bookings, ALWAYS check against global bookings
+    if (scope === 'year-specific') {
+      conflictQuery.scope = 'global';
+    } else {
+      // For global bookings, check against all (global + year-specific)
+      conflictQuery.$or = [
+        { scope: 'global' },
+        { scope: 'year-specific', affectedYears: { $in: affectedYears || [] } }
+      ];
+    }
+
+    const conflicts = await TimetableRestriction.find(conflictQuery);
+
+    const conflictSlots = [];
+    const conflictDetails = [];
+
+    conflicts.forEach(conflict => {
+      const overlappingSlots = (conflict.timeSlots || []).filter(slot => timeSlots.includes(slot));
+      const overlappingDays = (conflict.days || []).filter(day => days.includes(day) || conflict.days.includes('All days'));
+      
+      if (overlappingSlots.length > 0 && overlappingDays.length > 0) {
+        conflictSlots.push(...overlappingSlots);
+        conflictDetails.push({
+          restrictionName: conflict.restrictionName,
+          slots: overlappingSlots,
+          days: overlappingDays,
+          scope: conflict.scope
+        });
+      }
+    });
+
+    return {
+      hasConflicts: conflictDetails.length > 0,
+      conflicts: conflictDetails,
+      conflictSlots: [...new Set(conflictSlots)]
+    };
+
+  } catch (error) {
+    console.error('Error checking conflicts:', error);
+    return { hasConflicts: false, conflicts: [], conflictSlots: [] };
+  }
+};
+
+// ✅ COMPLETELY FIXED: Add new restriction with proper year-wise handling
 const addRestriction = async (req, res) => {
   try {
     const {
@@ -351,20 +391,19 @@ const addRestriction = async (req, res) => {
       return res.status(400).json({ error: 'Subject name is required for subject-based restrictions' });
     }
 
-    // Enhanced conflict checking for year-specific bookings
+    // ✅ CRITICAL: Enhanced conflict checking for year-specific bookings
     if (type === 'time') {
-      // Check against Global bookings (always conflict)
-      const globalConflictCheck = await checkTimeSlotConflicts(timeSlots, days, 'global', []);
-      if (globalConflictCheck.hasConflicts) {
-        return res.status(409).json({ 
-          error: 'Slot conflicts detected with Global bookings',
-          conflicts: globalConflictCheck.conflicts,
-          conflictMessage: `Slots ${globalConflictCheck.conflictSlots.join(', ')} are already globally booked by: ${globalConflictCheck.conflicts.map(c => c.restrictionName).join(', ')}. Global bookings block all year-specific bookings.`
-        });
-      }
-
-      // For year-specific bookings, don't check against other year bookings
-      if (scope !== 'year-specific') {
+      // ✅ For year-specific bookings, STRICTLY check against Global bookings (always conflict)
+      if (scope === 'year-specific') {
+        const globalConflictCheck = await checkTimeSlotConflicts(timeSlots, days, 'year-specific', []);
+        if (globalConflictCheck.hasConflicts) {
+          return res.status(409).json({ 
+            error: 'Slot conflicts detected with Global bookings',
+            conflicts: globalConflictCheck.conflicts,
+            conflictMessage: `Slots ${globalConflictCheck.conflictSlots.join(', ')} are already globally booked by: ${globalConflictCheck.conflicts.map(c => c.restrictionName).join(', ')}. Global bookings block all year-specific bookings.`
+          });
+        }
+      } else {
         // For global bookings, check against year-specific as normal
         const yearConflictCheck = await checkTimeSlotConflicts(timeSlots, days, scope, affectedYears);
         if (yearConflictCheck.hasConflicts) {
@@ -377,40 +416,38 @@ const addRestriction = async (req, res) => {
       }
     }
 
-    // Handle year-specific bookings with separate entries per day-slot
+    // ✅ COMPLETELY FIXED: Handle year-specific bookings properly - KEEP ORIGINAL YEAR NAMES
     if (type === 'time' && scope === 'year-specific') {
-      console.log('🎓 Creating year-specific bookings (separate entries per day-slot)');
+      console.log('🎓 Creating year-specific booking with ORIGINAL year names');
+      console.log('Days received:', days);
+      console.log('Slots received:', timeSlots);
+      console.log('Affected years (ORIGINAL):', affectedYears);
       
-      const createdRestrictions = [];
-      
-      // Create separate entry for each day-slot combination
-      for (const day of days) {
-        for (const slot of timeSlots) {
-          const newRestriction = new TimetableRestriction({
-            type,
-            restrictionName,
-            scope,
-            affectedYears: affectedYears || [],
-            timeSlots: [slot], // Single slot per entry
-            days: [day], // Single day per entry
-            duration: duration || 30,
-            priority: priority || 3
-          });
+      // ✅ FIXED: Create SINGLE restriction with ORIGINAL year names (don't convert to SE/TE)
+      const newRestriction = new TimetableRestriction({
+        type,
+        restrictionName,
+        scope,
+        affectedYears: affectedYears || [], // ✅ KEEP AS ["3rd Year"] not ["TE"]
+        timeSlots: timeSlots, // Keep all selected slots
+        days: days, // Keep all selected days
+        duration: duration || 30,
+        priority: priority || 2
+      });
 
-          const savedRestriction = await newRestriction.save();
-          createdRestrictions.push(savedRestriction);
-          
-          console.log(`✅ Created year-specific restriction: ${restrictionName} for ${affectedYears[0]} on ${day}, Slot ${slot}`);
-        }
-      }
+      const savedRestriction = await newRestriction.save();
+      
+      console.log(`✅ Created year-specific restriction: ${restrictionName} for ${affectedYears[0]}`);
+      console.log(`   - Days: ${days.join(', ')}`);
+      console.log(`   - Slots: ${timeSlots.join(', ')}`);
+      console.log(`   - Affected Years (STORED): ${savedRestriction.affectedYears.join(', ')}`);
 
       // Don't update TimeSlotConfiguration for year-specific bookings
-      console.log(`✅ ${createdRestrictions.length} year-specific restrictions created (no slot table update)`);
+      console.log(`✅ Year-specific restriction created (no slot table update)`);
       
       return res.status(201).json({
-        message: `Year-specific restrictions created successfully`,
-        restrictions: createdRestrictions,
-        count: createdRestrictions.length
+        message: `Year-specific restriction created successfully`,
+        restriction: savedRestriction
       });
     }
 
@@ -447,59 +484,6 @@ const addRestriction = async (req, res) => {
   } catch (error) {
     console.error('Error adding restriction:', error);
     res.status(500).json({ error: 'Failed to add restriction' });
-  }
-};
-
-// Check for time slot conflicts
-const checkTimeSlotConflicts = async (timeSlots, days, scope, affectedYears) => {
-  try {
-    let conflictQuery = {
-      type: 'time',
-      isActive: true,
-      timeSlots: { $in: timeSlots },
-      days: { $in: days }
-    };
-
-    // For year-specific bookings, only check against global bookings
-    if (scope === 'year-specific') {
-      conflictQuery.scope = 'global';
-    } else {
-      // For global bookings, check against all (global + year-specific)
-      conflictQuery.$or = [
-        { scope: 'global' },
-        { scope: 'year-specific', affectedYears: { $in: affectedYears || [] } }
-      ];
-    }
-
-    const conflicts = await TimetableRestriction.find(conflictQuery);
-
-    const conflictSlots = [];
-    const conflictDetails = [];
-
-    conflicts.forEach(conflict => {
-      const overlappingSlots = conflict.timeSlots.filter(slot => timeSlots.includes(slot));
-      const overlappingDays = conflict.days.filter(day => days.includes(day));
-      
-      if (overlappingSlots.length > 0 && overlappingDays.length > 0) {
-        conflictSlots.push(...overlappingSlots);
-        conflictDetails.push({
-          restrictionName: conflict.restrictionName,
-          slots: overlappingSlots,
-          days: overlappingDays,
-          scope: conflict.scope
-        });
-      }
-    });
-
-    return {
-      hasConflicts: conflictDetails.length > 0,
-      conflicts: conflictDetails,
-      conflictSlots: [...new Set(conflictSlots)]
-    };
-
-  } catch (error) {
-    console.error('Error checking conflicts:', error);
-    return { hasConflicts: false, conflicts: [], conflictSlots: [] };
   }
 };
 
@@ -615,5 +599,5 @@ module.exports = {
   getYearWiseBookings,
   getGlobalBookings,
   deleteSpecificBooking,
-  syncSlotTableWithRestrictions // ✅ NEW export for manual sync
+  syncSlotTableWithRestrictions // ✅ Export for manual sync
 };

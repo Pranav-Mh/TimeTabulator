@@ -11,6 +11,10 @@ const Generator = () => {
       BE: []
     },
     slots: [],
+    restrictions: {
+      global: [],
+      yearWise: []
+    },
     loading: false,
     error: '',
     success: ''
@@ -31,10 +35,10 @@ const Generator = () => {
     setCanGenerate(hasSeAndTe && hasSlots);
   }, [config.divisions, config.slots]);
 
-  // ✅ FIXED: Generate divisions based on numberOfDivisions
+  // ✅ Generate divisions based on numberOfDivisions
   const generateDivisions = (numberOfDivisions, yearPrefix) => {
     const divisions = [];
-    const divisionLetters = ['A', 'B', 'C', 'D', 'E', 'F']; // Support up to 6 divisions
+    const divisionLetters = ['A', 'B', 'C', 'D', 'E', 'F'];
     
     for (let i = 0; i < numberOfDivisions && i < divisionLetters.length; i++) {
       divisions.push(divisionLetters[i]);
@@ -43,24 +47,43 @@ const Generator = () => {
     return divisions;
   };
 
-  // ✅ COMPLETELY FIXED: Use the correct endpoints and handle responses properly
+  // ✅ NEW: Fetch restrictions data
+  const fetchRestrictions = async () => {
+    try {
+      console.log('Fetching restrictions for timetable generation...');
+      const restrictionsRes = await axios.get('http://localhost:5000/api/generator/restrictions');
+      
+      console.log('Restrictions fetched:', restrictionsRes.data);
+      
+      return {
+        global: restrictionsRes.data.global || [],
+        yearWise: restrictionsRes.data.yearWise || []
+      };
+    } catch (error) {
+      console.error('Error fetching restrictions:', error);
+      return { global: [], yearWise: [] };
+    }
+  };
+
+  // ✅ UPDATED: Fetch all data including restrictions
   const fetchInitialData = async () => {
     setConfig(prev => ({ ...prev, loading: true, error: '' }));
     
     try {
-      // ✅ Get time slots first (this is working fine)
-      const slotsResponse = await axios.get('http://localhost:5000/api/resources/timeslots');
+      // Get time slots and restrictions
+      const [slotsResponse, restrictions] = await Promise.all([
+        axios.get('http://localhost:5000/api/resources/timeslots'),
+        fetchRestrictions()
+      ]);
       
-      // ✅ FIXED: Use the MongoDB data directly - check your database first
+      // Get divisions for each year
       let seDivisions = [];
       let teDivisions = [];
       let beDivisions = [];
 
       try {
-        // FIXED: Use the new endpoint structure based on your database
         const seResponse = await axios.get('http://localhost:5000/api/syllabus/SE');
         if (seResponse.data && seResponse.data.numDivisions) {
-          console.log('SE syllabus found:', seResponse.data);
           seDivisions = generateDivisions(seResponse.data.numDivisions, 'SE');
         }
       } catch (seError) {
@@ -68,10 +91,8 @@ const Generator = () => {
       }
 
       try {
-        // FIXED: Use the new endpoint structure based on your database  
         const teResponse = await axios.get('http://localhost:5000/api/syllabus/TE');
         if (teResponse.data && teResponse.data.numDivisions) {
-          console.log('TE syllabus found:', teResponse.data);
           teDivisions = generateDivisions(teResponse.data.numDivisions, 'TE');
         }
       } catch (teError) {
@@ -79,17 +100,15 @@ const Generator = () => {
       }
 
       try {
-        // FIXED: Use the new endpoint structure based on your database
         const beResponse = await axios.get('http://localhost:5000/api/syllabus/BE');
         if (beResponse.data && beResponse.data.numDivisions) {
-          console.log('BE syllabus found:', beResponse.data);
           beDivisions = generateDivisions(beResponse.data.numDivisions, 'BE');
         }
       } catch (beError) {
         console.log('BE syllabus not configured yet');
       }
 
-      // ✅ FIXED: Handle slots data properly
+      // Handle slots data
       let slotsData = [];
       if (slotsResponse.data) {
         if (slotsResponse.data.timeSlots) {
@@ -107,16 +126,19 @@ const Generator = () => {
           BE: beDivisions
         },
         slots: slotsData,
+        restrictions: restrictions,
         loading: false,
         error: (seDivisions.length === 0 && teDivisions.length === 0) ? 
           'Please configure SE and TE syllabus first in the Syllabus tab.' : ''
       }));
 
-      console.log('✅ Final parsed divisions:', {
+      console.log('✅ Complete data loaded:', {
         SE: seDivisions,
         TE: teDivisions,
         BE: beDivisions,
-        slotsCount: slotsData.length
+        slotsCount: slotsData.length,
+        globalRestrictions: restrictions.global.length,
+        yearWiseRestrictions: restrictions.yearWise.length
       });
 
     } catch (error) {
@@ -137,42 +159,41 @@ const Generator = () => {
     }));
   };
 
-  // ✅ Generate basic timetable structure
+  // ✅ NEW: Generate timetable with restrictions integration
   const generateTimetable = async () => {
     setConfig(prev => ({ ...prev, loading: true, error: '', success: '' }));
 
     try {
-      // Build division list based on selections
-      let activeDivisions = [
-        ...config.divisions.SE.map(div => `SE-${div}`),
-        ...config.divisions.TE.map(div => `TE-${div}`)
-      ];
-
+      // Build included years
+      let includedYears = ['SE', 'TE'];
       if (config.includeBE && config.divisions.BE.length > 0) {
-        activeDivisions.push(...config.divisions.BE.map(div => `BE-${div}`));
+        includedYears.push('BE');
       }
 
-      // Create basic timetable structure
-      const timetableData = {
-        divisions: activeDivisions,
-        slots: config.slots,
-        days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
-        generatedAt: new Date().toISOString()
-      };
+      console.log('Generating timetable for years:', includedYears);
 
-      // For now, we're just creating the basic structure
-      setGeneratedTimetable(timetableData);
-      setConfig(prev => ({
-        ...prev,
-        success: 'Timetable structure generated successfully!',
-        loading: false
-      }));
+      // Call the new timetable generation API
+      const response = await axios.post('http://localhost:5000/api/generator/generate-timetable', {
+        includedYears: includedYears,
+        includeBE: config.includeBE
+      });
+
+      if (response.data.success) {
+        setGeneratedTimetable(response.data.timetable);
+        setConfig(prev => ({
+          ...prev,
+          success: `Timetable generated successfully! Applied ${response.data.restrictionsApplied} restrictions across ${response.data.divisionsCount} divisions.`,
+          loading: false
+        }));
+      } else {
+        throw new Error('Timetable generation failed');
+      }
 
     } catch (error) {
       console.error('Error generating timetable:', error);
       setConfig(prev => ({
         ...prev,
-        error: 'Failed to generate timetable structure.',
+        error: error.response?.data?.error || 'Failed to generate timetable structure.',
         loading: false
       }));
     }
@@ -197,7 +218,7 @@ const Generator = () => {
           Timetable Generator
         </h1>
         <p style={{ textAlign: 'center', color: '#666', fontSize: '14px' }}>
-          Generate comprehensive timetables for SE and TE (BE optional)
+          Generate comprehensive timetables with restrictions for SE and TE (BE optional)
         </p>
       </div>
 
@@ -318,6 +339,45 @@ const Generator = () => {
           </div>
         </div>
 
+        {/* NEW: Restrictions Info */}
+        <div style={{ marginBottom: '24px' }}>
+          <h3 style={{ fontSize: '16px', marginBottom: '12px', color: '#555' }}>
+            Configured Restrictions
+          </h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px' }}>
+            
+            {/* Global Restrictions */}
+            <div style={{ padding: '12px', backgroundColor: '#fff3cd', borderRadius: '8px', border: '1px solid #ffeaa7' }}>
+              <div style={{ fontWeight: '600', color: '#856404', marginBottom: '4px' }}>
+                🌐 Global Restrictions (Priority 1)
+              </div>
+              <div style={{ fontSize: '14px', color: '#6c757d' }}>
+                Count: {config.restrictions.global.length}
+              </div>
+              {config.restrictions.global.length > 0 && (
+                <div style={{ fontSize: '12px', color: '#495057', marginTop: '4px' }}>
+                  {config.restrictions.global.map(r => r.activityName).join(', ')}
+                </div>
+              )}
+            </div>
+
+            {/* Year-wise Restrictions */}
+            <div style={{ padding: '12px', backgroundColor: '#d1ecf1', borderRadius: '8px', border: '1px solid #bee5eb' }}>
+              <div style={{ fontWeight: '600', color: '#0c5460', marginBottom: '4px' }}>
+                🎓 Year-wise Restrictions (Priority 2)
+              </div>
+              <div style={{ fontSize: '14px', color: '#6c757d' }}>
+                Count: {config.restrictions.yearWise.length}
+              </div>
+              {config.restrictions.yearWise.length > 0 && (
+                <div style={{ fontSize: '12px', color: '#495057', marginTop: '4px' }}>
+                  {config.restrictions.yearWise.map(r => `${r.activityName} (${r.academicYear})`).join(', ')}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
         {/* Slots Info */}
         <div style={{ marginBottom: '24px' }}>
           <h3 style={{ fontSize: '16px', marginBottom: '12px', color: '#555' }}>
@@ -347,13 +407,15 @@ const Generator = () => {
             border: '1px solid #ccffcc'
           }}>
             <div style={{ fontWeight: '600', color: '#16a34a', marginBottom: '8px' }}>
-              Ready to Generate Timetable
+              Ready to Generate Timetable with Restrictions
             </div>
             <div style={{ fontSize: '14px', color: '#166534' }}>
               Years: SE ({config.divisions.SE.length} divisions) + TE ({config.divisions.TE.length} divisions)
               {config.includeBE && config.divisions.BE.length > 0 && 
                 ` + BE (${config.divisions.BE.length} divisions)`
               }
+              <br />
+              Restrictions: {config.restrictions.global.length} global + {config.restrictions.yearWise.length} year-wise
             </div>
           </div>
         )}
@@ -374,7 +436,7 @@ const Generator = () => {
             transition: 'all 0.2s'
           }}
         >
-          {config.loading ? '🔄 Generating...' : '🎯 Generate Timetable Structure'}
+          {config.loading ? '🔄 Generating...' : '🎯 Generate Timetable with Restrictions'}
         </button>
 
         {/* Help Text */}
@@ -391,6 +453,7 @@ const Generator = () => {
             <ul style={{ marginTop: '8px', marginLeft: '16px' }}>
               <li>Configure SE and TE syllabus in Syllabus tab</li>
               <li>Configure time slots in Restrictions tab</li>
+              <li>Add global and year-wise bookings as needed</li>
               <li>Assign teachers to subjects in Lecture and Lab tabs</li>
             </ul>
           </div>
@@ -399,7 +462,12 @@ const Generator = () => {
 
       {/* Generated Timetable Display */}
       {generatedTimetable && (
-        <TimetableGrid timetableData={generatedTimetable} />
+        <div style={{ marginTop: '30px' }}>
+          <h2 style={{ fontSize: '20px', marginBottom: '16px', color: '#333' }}>
+            Generated Timetable Structure with Restrictions
+          </h2>
+          <TimetableGrid timetableData={generatedTimetable} />
+        </div>
       )}
     </div>
   );
