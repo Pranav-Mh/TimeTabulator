@@ -34,7 +34,7 @@ const Syllabus = () => {
   const loadSyllabus = async (year) => {
     try {
       const res = await axios.get(`http://localhost:5000/api/syllabus/${year}`);
-      setNumDivisions(parseInt(res.data.numberOfDivisions) || 1);  // Force number type
+      setNumDivisions(parseInt(res.data.numDivisions) || 1);  // Force number type
       const existingSubjects = res.data.subjects?.map(subject => ({
         courseCode: subject.courseCode || '',
         name: subject.name || '',

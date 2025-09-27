@@ -448,5 +448,4 @@ const TimeSlotModal = ({ isOpen, onClose, timeSlotsPerDay, periodDuration, onSav
   );
 };
 
-
 export default TimeSlotModal;
