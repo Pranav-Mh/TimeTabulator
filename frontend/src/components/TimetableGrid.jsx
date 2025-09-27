@@ -1,208 +1,279 @@
 import React from 'react';
 
 const TimetableGrid = ({ timetableData }) => {
-  if (!timetableData) {
+  if (!timetableData || typeof timetableData !== 'object') {
     return (
-      <div style={{ textAlign: 'center', padding: '40px', color: '#666' }}>
+      <div style={{ 
+        padding: '20px', 
+        textAlign: 'center', 
+        color: '#666',
+        backgroundColor: '#f8f9fa',
+        borderRadius: '8px'
+      }}>
         No timetable data available
       </div>
     );
   }
 
-  const { divisions, slots, days } = timetableData;
+  const days = Object.keys(timetableData);
+  const divisions = days.length > 0 ? Object.keys(timetableData[days[0]]) : [];
+  const slots = divisions.length > 0 ? Object.keys(timetableData[days[0]][divisions[0]]) : [];
 
-  // ✅ Get slot display info
-  const getSlotInfo = (slot) => {
-    if (slot.isBooked) {
+  const getActivityStyle = (activity) => {
+    // Handle null or undefined activity
+    if (!activity || !activity.activity) {
       return {
-        display: slot.bookedBy || 'RECESS',
-        style: {
-          backgroundColor: '#fee2e2',
-          color: '#dc2626',
-          fontWeight: '600',
-          textAlign: 'center'
-        }
+        backgroundColor: '#f8f9fa',
+        color: '#6c757d',
+        border: '1px solid #dee2e6'
       };
     }
-    return {
-      display: '',
-      style: {
-        backgroundColor: '#f9fafb',
-        border: '1px dashed #d1d5db',
-        textAlign: 'center'
-      }
+
+    switch (activity.type) {
+      case 'global-restriction':
+        return {
+          backgroundColor: '#fff3cd',
+          color: '#856404',
+          border: '2px solid #ffc107',
+          fontWeight: '700'
+        };
+      case 'year-restriction':
+        return {
+          backgroundColor: '#d1ecf1',
+          color: '#0c5460',
+          border: '2px solid #17a2b8',
+          fontWeight: '600'
+        };
+      case 'lecture':
+        return {
+          backgroundColor: '#d4edda',
+          color: '#155724',
+          border: '1px solid #c3e6cb'
+        };
+      case 'lab':
+        return {
+          backgroundColor: '#f8d7da',
+          color: '#721c24',
+          border: '1px solid #f5c6cb'
+        };
+      default:
+        return {
+          backgroundColor: '#e2e3e5',
+          color: '#383d41',
+          border: '1px solid #d6d8db'
+        };
+    }
+  };
+
+  const formatSlotTime = (slotNumber) => {
+    // You can customize this based on your time slot configuration
+    const times = {
+      1: '08:00-09:00',
+      2: '09:00-10:00', 
+      3: '10:00-10:15',
+      4: '10:15-11:15',
+      5: '11:15-12:15',
+      6: '12:15-13:00',
+      7: '13:00-14:00',
+      8: '14:00-15:00'
     };
+    return times[slotNumber] || `Slot ${slotNumber}`;
   };
 
   return (
-    <div style={{ marginTop: '30px' }}>
-      <h2 style={{ 
-        fontSize: '20px', 
-        fontWeight: '600', 
-        marginBottom: '20px',
-        color: '#333'
+    <div style={{ 
+      overflowX: 'auto', 
+      backgroundColor: 'white',
+      borderRadius: '12px',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+      padding: '24px',
+      marginTop: '20px'
+    }}>
+      <table style={{ 
+        width: '100%', 
+        borderCollapse: 'collapse',
+        fontSize: '13px'
       }}>
-        Generated Timetable Structure
-      </h2>
-
-      <div style={{
-        backgroundColor: 'white',
-        borderRadius: '12px',
-        overflow: 'hidden',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-      }}>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1000px' }}>
-            {/* Header Row */}
-            <thead>
-              <tr style={{ backgroundColor: '#f8f9fa' }}>
-                <th style={{
-                  padding: '12px',
-                  textAlign: 'left',
-                  fontWeight: '600',
-                  borderBottom: '2px solid #dee2e6',
-                  color: '#495057',
-                  width: '120px',
-                  position: 'sticky',
-                  left: 0,
-                  backgroundColor: '#f8f9fa',
-                  zIndex: 10
+        <thead>
+          <tr>
+            <th style={{ 
+              border: '2px solid #495057', 
+              padding: '12px 8px', 
+              backgroundColor: '#495057',
+              color: 'white',
+              fontWeight: '600',
+              minWidth: '120px'
+            }}>
+              Day / Division
+            </th>
+            {slots.map(slot => (
+              <th key={slot} style={{ 
+                border: '2px solid #495057', 
+                padding: '12px 6px', 
+                backgroundColor: '#495057',
+                color: 'white',
+                fontWeight: '600',
+                minWidth: '100px',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: '14px' }}>Slot {slot}</div>
+                <div style={{ fontSize: '11px', opacity: 0.9, marginTop: '2px' }}>
+                  {formatSlotTime(slot)}
+                </div>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {days.map(day => (
+            <React.Fragment key={day}>
+              {/* Day Header Row */}
+              <tr>
+                <td colSpan={slots.length + 1} style={{
+                  backgroundColor: '#6c757d',
+                  padding: '10px 12px',
+                  fontWeight: '700',
+                  border: '2px solid #495057',
+                  color: 'white',
+                  fontSize: '15px'
                 }}>
-                  Day / Division
-                </th>
-                {slots.map((slot, index) => (
-                  <th key={index} style={{
-                    padding: '8px 4px',
-                    textAlign: 'center',
-                    fontWeight: '600',
-                    borderBottom: '2px solid #dee2e6',
-                    color: '#495057',
-                    fontSize: '12px',
-                    minWidth: '100px',
-                    backgroundColor: slot.isBooked ? '#fee2e2' : '#f8f9fa'
-                  }}>
-                    <div>Slot {slot.slotNumber}</div>
-                    <div style={{ fontSize: '10px', color: '#666' }}>
-                      {slot.startTime}-{slot.endTime}
-                    </div>
-                    {slot.isBooked && (
-                      <div style={{ fontSize: '10px', color: '#dc2626', fontWeight: '700' }}>
-                        {slot.bookedBy || 'BLOCKED'}
-                      </div>
-                    )}
-                  </th>
-                ))}
+                  📅 {day}
+                </td>
               </tr>
-            </thead>
-
-            <tbody>
-              {days.map((day, dayIndex) => (
-                <React.Fragment key={day}>
-                  {/* Day Header Row */}
-                  <tr style={{ backgroundColor: '#e5e7eb' }}>
-                    <td style={{
-                      padding: '10px 12px',
-                      fontWeight: '600',
-                      color: '#374151',
-                      borderBottom: '1px solid #d1d5db',
-                      position: 'sticky',
-                      left: 0,
-                      backgroundColor: '#e5e7eb',
-                      zIndex: 9
-                    }}>
-                      {day}
-                    </td>
-                    {slots.map((slot, slotIndex) => (
-                      <td key={slotIndex} style={{
-                        borderBottom: '1px solid #d1d5db',
-                        backgroundColor: '#e5e7eb'
-                      }}></td>
-                    ))}
-                  </tr>
-
-                  {/* Division Rows for this day */}
-                  {divisions.map((division, divIndex) => (
-                    <tr key={`${day}-${division}`} style={{
-                      backgroundColor: divIndex % 2 === 0 ? '#ffffff' : '#f9fafb',
-                      borderBottom: divIndex === divisions.length - 1 ? '2px solid #d1d5db' : '1px solid #e5e7eb'
-                    }}>
-                      <td style={{
-                        padding: '10px 12px',
-                        fontWeight: '500',
-                        color: '#4b5563',
-                        borderRight: '1px solid #e5e7eb',
-                        position: 'sticky',
-                        left: 0,
-                        backgroundColor: divIndex % 2 === 0 ? '#ffffff' : '#f9fafb',
-                        zIndex: 8
+              
+              {/* Division Rows */}
+              {divisions.map(division => (
+                <tr key={`${day}-${division}`}>
+                  <td style={{ 
+                    border: '2px solid #dee2e6', 
+                    padding: '10px 12px',
+                    backgroundColor: '#f8f9fa',
+                    fontWeight: '700',
+                    color: division.startsWith('SE') ? '#2563eb' : 
+                          division.startsWith('TE') ? '#059669' : '#dc2626',
+                    fontSize: '14px'
+                  }}>
+                    {division}
+                  </td>
+                  {slots.map(slot => {
+                    const activity = timetableData[day][division][slot];
+                    const style = getActivityStyle(activity);
+                    
+                    return (
+                      <td key={slot} style={{ 
+                        border: '2px solid #dee2e6', 
+                        padding: '8px 6px',
+                        textAlign: 'center',
+                        minHeight: '60px',
+                        verticalAlign: 'middle',
+                        ...style
                       }}>
-                        <span style={{
-                          padding: '4px 8px',
-                          backgroundColor: division.startsWith('SE') ? '#dbeafe' : 
-                                          division.startsWith('TE') ? '#dcfce7' : '#fef3c7',
-                          color: division.startsWith('SE') ? '#1e40af' : 
-                                 division.startsWith('TE') ? '#166534' : '#92400e',
-                          borderRadius: '4px',
-                          fontSize: '12px',
-                          fontWeight: '600'
-                        }}>
-                          {division}
-                        </span>
+                        {activity && activity.activity ? (
+                          <div>
+                            <div style={{ 
+                              fontWeight: activity.type === 'global-restriction' ? '700' : '600', 
+                              fontSize: '12px',
+                              lineHeight: '1.2'
+                            }}>
+                              {activity.activity}
+                            </div>
+                            {activity.type === 'global-restriction' && (
+                              <div style={{ fontSize: '9px', opacity: 0.8, marginTop: '2px' }}>
+                                🌐 Global
+                              </div>
+                            )}
+                            {activity.type === 'year-restriction' && activity.academicYear && (
+                              <div style={{ fontSize: '9px', opacity: 0.8, marginTop: '2px' }}>
+                                🎓 {activity.academicYear}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div style={{ color: '#6c757d', fontSize: '11px', fontStyle: 'italic' }}>
+                            Free
+                          </div>
+                        )}
                       </td>
-                      
-                      {slots.map((slot, slotIndex) => {
-                        const slotInfo = getSlotInfo(slot);
-                        return (
-                          <td key={slotIndex} style={{
-                            padding: '8px 4px',
-                            fontSize: '11px',
-                            borderRight: '1px solid #e5e7eb',
-                            minHeight: '40px',
-                            ...slotInfo.style
-                          }}>
-                            {slotInfo.display}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </React.Fragment>
+                    );
+                  })}
+                </tr>
               ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Timetable Info */}
+              
+              {/* Spacer between days */}
+              <tr style={{ height: '10px' }}>
+                <td colSpan={slots.length + 1} style={{ 
+                  backgroundColor: 'transparent', 
+                  border: 'none' 
+                }}></td>
+              </tr>
+            </React.Fragment>
+          ))}
+        </tbody>
+      </table>
+      
+      {/* Enhanced Legend */}
       <div style={{ 
-        marginTop: '20px', 
-        padding: '16px', 
-        backgroundColor: '#f8f9fa', 
-        borderRadius: '8px',
-        fontSize: '14px',
-        color: '#666'
+        marginTop: '24px', 
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+        gap: '12px',
+        fontSize: '13px'
       }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-          <div>
-            <strong>Total Divisions:</strong> {divisions.length}
-          </div>
-          <div>
-            <strong>Total Slots:</strong> {slots.length}
-          </div>
-          <div>
-            <strong>Available Slots:</strong> {slots.filter(slot => !slot.isBooked).length}
-          </div>
-          <div>
-            <strong>Blocked Slots:</strong> {slots.filter(slot => slot.isBooked).length}
-          </div>
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: '8px',
+          padding: '8px',
+          backgroundColor: '#fff3cd',
+          borderRadius: '6px',
+          border: '1px solid #ffc107'
+        }}>
+          <div style={{ 
+            width: '16px', 
+            height: '16px', 
+            backgroundColor: '#fff3cd',
+            border: '2px solid #ffc107',
+            borderRadius: '3px'
+          }}></div>
+          <span style={{ fontWeight: '600' }}>🌐 Global Restrictions (College-wide)</span>
         </div>
         
-        <div style={{ marginTop: '12px', fontSize: '12px' }}>
-          <strong>Legend:</strong> 
-          <span style={{ marginLeft: '8px', padding: '2px 6px', backgroundColor: '#dbeafe', color: '#1e40af', borderRadius: '3px' }}>SE</span>
-          <span style={{ marginLeft: '8px', padding: '2px 6px', backgroundColor: '#dcfce7', color: '#166534', borderRadius: '3px' }}>TE</span>
-          <span style={{ marginLeft: '8px', padding: '2px 6px', backgroundColor: '#fef3c7', color: '#92400e', borderRadius: '3px' }}>BE</span>
-          <span style={{ marginLeft: '8px', padding: '2px 6px', backgroundColor: '#fee2e2', color: '#dc2626', borderRadius: '3px' }}>Blocked</span>
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: '8px',
+          padding: '8px',
+          backgroundColor: '#d1ecf1',
+          borderRadius: '6px',
+          border: '1px solid #17a2b8'
+        }}>
+          <div style={{ 
+            width: '16px', 
+            height: '16px', 
+            backgroundColor: '#d1ecf1',
+            border: '2px solid #17a2b8',
+            borderRadius: '3px'
+          }}></div>
+          <span style={{ fontWeight: '600' }}>🎓 Year-specific Restrictions</span>
+        </div>
+        
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: '8px',
+          padding: '8px',
+          backgroundColor: '#f8f9fa',
+          borderRadius: '6px',
+          border: '1px solid #dee2e6'
+        }}>
+          <div style={{ 
+            width: '16px', 
+            height: '16px', 
+            backgroundColor: '#f8f9fa',
+            border: '1px solid #dee2e6',
+            borderRadius: '3px'
+          }}></div>
+          <span>📝 Free Slots (Available for lectures)</span>
         </div>
       </div>
     </div>
