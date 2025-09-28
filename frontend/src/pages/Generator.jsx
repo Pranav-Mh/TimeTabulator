@@ -21,6 +21,7 @@ const Generator = () => {
   });
 
   const [generatedTimetable, setGeneratedTimetable] = useState(null);
+  const [labScheduleData, setLabScheduleData] = useState(null); // NEW: Add lab data state
   const [canGenerate, setCanGenerate] = useState(false);
 
   // ✅ Fetch all required data on component mount
@@ -159,7 +160,7 @@ const Generator = () => {
     }));
   };
 
-  // ✅ NEW: Generate timetable with restrictions integration
+  // ✅ MODIFIED: Generate timetable with lab integration
   const generateTimetable = async () => {
     setConfig(prev => ({ ...prev, loading: true, error: '', success: '' }));
 
@@ -172,7 +173,7 @@ const Generator = () => {
 
       console.log('Generating timetable for years:', includedYears);
 
-      // Call the new timetable generation API
+      // Call the enhanced timetable generation API (includes lab scheduling)
       const response = await axios.post('http://localhost:5000/api/generator/generate-timetable', {
         includedYears: includedYears,
         includeBE: config.includeBE
@@ -180,9 +181,25 @@ const Generator = () => {
 
       if (response.data.success) {
         setGeneratedTimetable(response.data.timetable);
+        
+        // NEW: Set lab schedule data
+        if (response.data.lab_schedule) {
+          setLabScheduleData(response.data.lab_schedule);
+          console.log('🔬 Lab schedule received:', response.data.lab_schedule.metrics);
+        }
+        
+        // Enhanced success message
+        let successMessage = `Timetable generated successfully! Applied ${response.data.restrictionsApplied} restrictions across ${response.data.divisionsCount} divisions.`;
+        
+        if (response.data.lab_schedule?.success) {
+          successMessage += ` 🔬 Lab scheduling: ${response.data.lab_schedule.metrics.total_sessions_scheduled} sessions scheduled.`;
+        } else if (response.data.lab_schedule?.error) {
+          successMessage += ` ⚠️ Lab scheduling had issues: ${response.data.lab_schedule.error}`;
+        }
+
         setConfig(prev => ({
           ...prev,
-          success: `Timetable generated successfully! Applied ${response.data.restrictionsApplied} restrictions across ${response.data.divisionsCount} divisions.`,
+          success: successMessage,
           loading: false
         }));
       } else {
@@ -407,7 +424,7 @@ const Generator = () => {
             border: '1px solid #ccffcc'
           }}>
             <div style={{ fontWeight: '600', color: '#16a34a', marginBottom: '8px' }}>
-              Ready to Generate Timetable with Restrictions
+              Ready to Generate Timetable with Lab Integration
             </div>
             <div style={{ fontSize: '14px', color: '#166534' }}>
               Years: SE ({config.divisions.SE.length} divisions) + TE ({config.divisions.TE.length} divisions)
@@ -416,6 +433,8 @@ const Generator = () => {
               }
               <br />
               Restrictions: {config.restrictions.global.length} global + {config.restrictions.yearWise.length} year-wise
+              <br />
+              🔬 Lab Scheduling: Auto-enabled (assigns labs to batches simultaneously)
             </div>
           </div>
         )}
@@ -436,7 +455,7 @@ const Generator = () => {
             transition: 'all 0.2s'
           }}
         >
-          {config.loading ? '🔄 Generating...' : '🎯 Generate Timetable with Restrictions'}
+          {config.loading ? '🔄 Generating...' : '🎯 Generate Timetable with Labs'}
         </button>
 
         {/* Help Text */}
@@ -460,13 +479,16 @@ const Generator = () => {
         )}
       </div>
 
-      {/* Generated Timetable Display */}
+      {/* Generated Timetable Display with Lab Integration */}
       {generatedTimetable && (
         <div style={{ marginTop: '30px' }}>
           <h2 style={{ fontSize: '20px', marginBottom: '16px', color: '#333' }}>
-            Generated Timetable Structure with Restrictions
+            Generated Timetable Structure with Lab Assignments
           </h2>
-          <TimetableGrid timetableData={generatedTimetable} />
+          <TimetableGrid 
+            timetableData={generatedTimetable} 
+            labScheduleData={labScheduleData} 
+          />
         </div>
       )}
     </div>

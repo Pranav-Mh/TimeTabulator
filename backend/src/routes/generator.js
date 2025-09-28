@@ -7,6 +7,7 @@ const LectureAssignment = require('../models/LectureAssignment');
 const LabAssignment = require('../models/LabAssignment');
 const Syllabus = require('../models/Syllabus');
 const TimetableRestriction = require('../models/TimetableRestriction');
+const { runLabScheduler } = require('../controllers/labSchedulerController'); // ✅ ONLY ONE IMPORT
 
 // Get divisions for a specific academic year
 router.get('/divisions/:academicYear', async (req, res) => {
@@ -68,56 +69,73 @@ router.get('/restrictions', async (req, res) => {
   }
 });
 
-// ✅ COMPLETELY FIXED: Generate complete timetable with restrictions
+// ✅ FIXED: Generate complete timetable with restrictions AND lab scheduling
 router.post('/generate-timetable', async (req, res) => {
   try {
     const { includedYears, includeBE } = req.body;
-    console.log('🚀 Generating timetable with restrictions...', { includedYears, includeBE });
+    console.log('Generating timetable with restrictions and labs...', includedYears, includeBE);
     
     // Get all divisions for included years
-    const divisions = await Division.find({ 
-      academicYear: { $in: includedYears } 
-    });
-    console.log(`📊 Found ${divisions.length} divisions for years: ${includedYears.join(', ')}`);
+    const divisions = await Division.find({ academicYear: { $in: includedYears } });
+    console.log('Found', divisions.length, 'divisions for years', includedYears.join(','));
     
-    // ✅ FIXED: Get ALL active restrictions with proper year filtering
+    // Get ALL active restrictions
     const allRestrictions = await TimetableRestriction.find({
       isActive: true,
       $or: [
         { scope: 'global' },
-        { scope: 'year-specific' } // ✅ Get ALL year-wise restrictions, filter later
+        { scope: 'year-specific' }
       ]
-    }).sort([
-      ['scope', 1], // Global first (scope: 'global' comes before 'year-specific' alphabetically)
-      ['createdAt', 1]
-    ]);
+    }).sort({ scope: 1, createdAt: 1 });
     
-    console.log(`🎯 Found ${allRestrictions.length} active restrictions:`);
-    allRestrictions.forEach(r => {
-      console.log(`  - ${r.scope}: "${r.restrictionName}" (Slots: ${r.timeSlots?.join(',')}, Days: ${r.days?.join(',')}, Years: ${r.affectedYears?.join(',')})`);
-    });
+    console.log('Found', allRestrictions.length, 'active restrictions');
     
     // Get time slots
     const TimeSlotConfiguration = require('../models/TimeSlotConfiguration');
     const timeConfig = await TimeSlotConfiguration.findOne();
-    
     if (!timeConfig || !timeConfig.timeSlots) {
       return res.status(400).json({ error: 'Time slots not configured' });
     }
     
-    console.log(`⏰ Using ${timeConfig.timeSlots.length} time slots`);
+    console.log('Using', timeConfig.timeSlots.length, 'time slots');
     
-    // ✅ FIXED: Generate timetable structure with restrictions applied
+    // Generate timetable structure with restrictions applied
     const timetableStructure = generateTimetableWithRestrictions(
       divisions, 
       allRestrictions, 
-      timeConfig.timeSlots,
+      timeConfig.timeSlots, 
       includedYears
     );
     
+    // ✅ NEW: Run lab scheduling integration
+    console.log('🔬 Starting lab scheduling integration...');
+    let labScheduleResult = null;
+    
+    try {
+      labScheduleResult = await runLabScheduler();
+      console.log('✅ Lab scheduling completed successfully');
+      console.log(`📊 Scheduled ${labScheduleResult.metrics.total_sessions_scheduled} lab sessions`);
+    } catch (labError) {
+      console.error('⚠️ Lab scheduling failed:', labError.message);
+      // Continue without lab scheduling - don't break main timetable generation
+      labScheduleResult = {
+        success: false,
+        error: labError.message,
+        schedule_matrix: [],
+        conflict_report: [{ error: 'Lab scheduling failed', reason: labError.message }],
+        metrics: {
+          total_sessions_scheduled: 0,
+          conflicts: 1,
+          success_rate: 0
+        }
+      };
+    }
+    
+    // Enhanced response with both timetable structure and lab schedule
     res.json({
       success: true,
       timetable: timetableStructure,
+      lab_schedule: labScheduleResult,
       divisionsCount: divisions.length,
       restrictionsApplied: allRestrictions.length,
       generatedAt: new Date().toISOString(),
@@ -130,20 +148,25 @@ router.post('/generate-timetable', async (req, res) => {
           slots: r.timeSlots,
           days: r.days,
           affectedYears: r.affectedYears
-        }))
+        })),
+        labSchedulingSummary: {
+          total_sessions: labScheduleResult?.metrics?.total_sessions_scheduled || 0,
+          conflicts: labScheduleResult?.conflict_report?.length || 0,
+          success_rate: labScheduleResult?.metrics?.success_rate || 0
+        }
       }
     });
     
   } catch (error) {
-    console.error('❌ Error generating timetable:', error);
+    console.error('Error generating timetable:', error);
     res.status(500).json({ 
-      error: 'Failed to generate timetable',
+      error: 'Failed to generate timetable', 
       details: error.message 
     });
   }
 });
 
-// ✅ COMPLETELY FIXED: Helper function to generate timetable with restrictions
+// ✅ Helper function to generate timetable with restrictions
 function generateTimetableWithRestrictions(divisions, restrictions, timeSlots, includedYears) {
   const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const timetable = {};
