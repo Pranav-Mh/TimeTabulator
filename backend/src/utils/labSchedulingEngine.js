@@ -11,83 +11,117 @@ class LabSchedulingEngine {
     this.scheduleMatrix = [];
     this.conflictReport = [];
     this.resolutionLog = [];
-    this.teacherAvailability = new Map();
-    this.labAvailability = new Map();
-    this.subjectHoursCompleted = new Map();
-    this.dailyLabUsage = new Map(); // NEW: Track lab usage per day/slot
-    this.prioritizeDayCompletion = true; // NEW: Complete all labs same day
+    this.teacherAvailability = new Map(); // Per day availability
+    this.labAvailability = new Map(); // Per day availability
+    this.subjectHoursCompleted = new Map(); // Persistent across days
+    this.batchSubjectProgress = new Map(); // Track progress per batch per subject
+    this.prioritizeMultiDay = true; // NEW: Multi-day scheduling
   }
 
-  // Main scheduling entry point with intelligent resource allocation
+  // ENHANCED: Main scheduling entry point with multi-day support
   async scheduleAllLabs() {
     try {
-      console.log('🔬 Starting Intelligent Lab Scheduling Engine...');
+      console.log('🔬 Starting Multi-Day Intelligent Lab Scheduling Engine...');
       
       // Step 1: Gather all required data
       const inputData = await this.gatherInputData();
       
-      // Step 2: NEW APPROACH - Schedule by day with intelligent allocation
-      const targetDay = 'Monday'; // Primary target
-      console.log(`🎯 INTELLIGENT SCHEDULING: Attempting to fit ALL divisions on ${targetDay}`);
+      // Step 2: Initialize progress tracking
+      this.initializeBatchProgress(inputData);
       
-      const allDivisions = Object.keys(inputData.divisions).filter(div => 
-        this.hasLabAssignments(div, inputData)
-      );
+      // Step 3: Multi-day scheduling (Monday to Friday)
+      const daysToSchedule = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
       
-      console.log(`📋 Divisions needing labs: ${allDivisions.join(', ')}`);
-      
-      // Step 3: Intelligent slot allocation for all divisions
-      const success = await this.scheduleAllDivisionsOnDay(targetDay, allDivisions, inputData);
-      
-      if (!success) {
-        console.log(`⚠️ ${targetDay} full, trying alternative days...`);
+      for (const day of daysToSchedule) {
+        console.log(`\n📅 ======================== SCHEDULING ${day.toUpperCase()} ========================`);
         
-        // Try other days
-        const alternateDays = ['Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        // Reset daily availability (fresh start each day)
+        this.resetDailyAvailability();
         
-        for (const day of alternateDays) {
-          console.log(`🔄 Trying ${day} for all divisions...`);
-          this.resetAvailabilityTracking(); // Reset for new day
+        // Find divisions with remaining work for this day
+        const divisionsWithWork = this.getDivisionsWithRemainingWork(inputData);
+        
+        if (divisionsWithWork.length > 0) {
+          console.log(`🎯 Divisions with remaining work: ${divisionsWithWork.join(', ')}`);
           
-          if (await this.scheduleAllDivisionsOnDay(day, allDivisions, inputData)) {
-            console.log(`✅ All divisions scheduled successfully on ${day}!`);
-            break;
-          }
+          // Schedule all divisions with work on this day
+          await this.scheduleAllDivisionsOnDay(day, divisionsWithWork, inputData);
+        } else {
+          console.log(`✅ No remaining work for ${day}`);
         }
-      } else {
-        console.log(`✅ All divisions scheduled successfully on ${targetDay}!`);
+        
+        // Log progress after each day
+        this.logDailyProgress(day);
       }
       
       // Step 4: Generate final output
       return this.generateFinalOutput();
       
     } catch (error) {
-      console.error('❌ Lab scheduling failed:', error);
+      console.error('❌ Multi-day lab scheduling failed:', error);
       throw error;
     }
   }
 
-  // NEW: Check if division has lab assignments
-  hasLabAssignments(division, inputData) {
-    const batches = inputData.divisions[division];
-    if (!batches || batches.length === 0) return false;
+  // NEW: Initialize progress tracking for all batches and subjects
+  initializeBatchProgress(inputData) {
+    console.log('🔄 Initializing batch progress tracking...');
     
-    return batches.some(batch => 
-      inputData.lab_assignments[batch] && inputData.lab_assignments[batch].length > 0
-    );
+    Object.keys(inputData.divisions).forEach(division => {
+      const batches = inputData.divisions[division];
+      
+      batches.forEach(batch => {
+        const subjects = inputData.lab_assignments[batch] || [];
+        
+        subjects.forEach(subject => {
+          const key = `${batch}-${subject.subject}`;
+          
+          // Initialize if not exists
+          if (!this.batchSubjectProgress.has(key)) {
+            this.batchSubjectProgress.set(key, {
+              batch,
+              subject: subject.subject,
+              teacher_id: subject.teacher_id,
+              teacher_name: subject.teacher_name,
+              teacher_display_id: subject.teacher_display_id,
+              total_hours: subject.hours_per_week,
+              completed_hours: 0,
+              remaining_hours: subject.hours_per_week,
+              status: 'pending'
+            });
+          }
+        });
+      });
+    });
+    
+    console.log(`✅ Initialized progress for ${this.batchSubjectProgress.size} batch-subject combinations`);
   }
 
-  // NEW: Reset availability tracking for new day
-  resetAvailabilityTracking() {
+  // NEW: Reset daily teacher/lab availability (fresh start each day)
+  resetDailyAvailability() {
     this.teacherAvailability.clear();
     this.labAvailability.clear();
-    this.dailyLabUsage.clear();
-    this.scheduleMatrix = []; // Reset schedule matrix
+    console.log('🔄 Daily availability reset - fresh start');
   }
 
-  // NEW: Intelligent scheduling for all divisions on single day
+  // NEW: Find divisions that still have work remaining
+  getDivisionsWithRemainingWork(inputData) {
+    const divisionsWithWork = new Set();
+    
+    for (const [key, progress] of this.batchSubjectProgress) {
+      if (progress.remaining_hours > 0) {
+        // Extract division from batch name (e.g., "SE-A1" → "SE-A")
+        const division = progress.batch.replace(/\d+$/, '');
+        divisionsWithWork.add(division);
+      }
+    }
+    
+    return Array.from(divisionsWithWork);
+  }
+
+  // ENHANCED: Schedule all divisions with work on a specific day
   async scheduleAllDivisionsOnDay(day, divisions, inputData) {
-    console.log(`🎯 INTELLIGENT ALLOCATION: Attempting all ${divisions.length} divisions on ${day}`);
+    console.log(`🎯 INTELLIGENT ALLOCATION: Attempting ${divisions.length} divisions on ${day}`);
     
     // Get all available time blocks for the day
     const allTimeBlocks = this.getAllAvailable2HourBlocks(day, inputData.slots, inputData, divisions);
@@ -99,13 +133,13 @@ class LabSchedulingEngine {
     
     console.log(`🕐 Available time blocks on ${day}: ${allTimeBlocks.map(b => `${b.start_slot}-${b.end_slot}`).join(', ')}`);
     
-    // NEW: Intelligent allocation algorithm
-    const allocation = await this.findOptimalAllocation(day, divisions, allTimeBlocks, inputData);
+    // NEW: Enhanced allocation with remaining work priority
+    const allocation = await this.findOptimalAllocationWithProgress(day, divisions, allTimeBlocks, inputData);
     
     if (allocation.success) {
-      // Commit all allocations
+      // Commit all allocations and update progress
       for (const divisionSchedule of allocation.schedule) {
-        await this.commitBatchAssignments(
+        await this.commitBatchAssignmentsWithProgress(
           divisionSchedule.division, 
           day, 
           divisionSchedule.timeBlock, 
@@ -118,21 +152,21 @@ class LabSchedulingEngine {
     return false;
   }
 
-  // NEW: Find optimal allocation of divisions to time blocks
-  async findOptimalAllocation(day, divisions, timeBlocks, inputData) {
-    console.log(`🧠 OPTIMAL ALLOCATION: ${divisions.length} divisions across ${timeBlocks.length} time blocks`);
+  // NEW: Enhanced allocation considering progress and dynamic subject selection
+  async findOptimalAllocationWithProgress(day, divisions, timeBlocks, inputData) {
+    console.log(`🧠 OPTIMAL ALLOCATION WITH PROGRESS: ${divisions.length} divisions across ${timeBlocks.length} time blocks`);
     
-    // Try all possible combinations of divisions to time blocks
+    // Try all possible combinations
     const allocations = this.generateAllocationCombinations(divisions, timeBlocks);
     
     for (const allocation of allocations) {
       console.log(`🔍 Testing allocation: ${allocation.map(a => `${a.division}@${a.timeBlock.start_slot}-${a.timeBlock.end_slot}`).join(', ')}`);
       
-      // Test this allocation
-      const testResult = await this.testAllocation(day, allocation, inputData);
+      // Test this allocation with progress consideration
+      const testResult = await this.testAllocationWithProgress(day, allocation, inputData);
       
       if (testResult.success) {
-        console.log(`✅ OPTIMAL ALLOCATION FOUND!`);
+        console.log(`✅ OPTIMAL ALLOCATION WITH PROGRESS FOUND!`);
         return testResult;
       } else {
         console.log(`❌ Allocation failed: ${testResult.reason}`);
@@ -143,47 +177,8 @@ class LabSchedulingEngine {
     return { success: false };
   }
 
-  // NEW: Generate all possible allocation combinations
-  generateAllocationCombinations(divisions, timeBlocks) {
-    const combinations = [];
-    
-    // For simplicity, try sequential allocation first, then permutations
-    // Sequential allocation: assign divisions to time blocks in order
-    if (timeBlocks.length >= divisions.length) {
-      const sequential = divisions.map((division, index) => ({
-        division,
-        timeBlock: timeBlocks[index]
-      }));
-      combinations.push(sequential);
-    }
-    
-    // If sequential doesn't work, try reverse order allocation
-    if (timeBlocks.length >= divisions.length) {
-      const reverse = divisions.map((division, index) => ({
-        division,
-        timeBlock: timeBlocks[timeBlocks.length - 1 - index]
-      }));
-      combinations.push(reverse);
-    }
-    
-    // Try mixing SE and TE divisions across different time blocks
-    const mixed = [];
-    let blockIndex = 0;
-    for (const division of divisions) {
-      mixed.push({
-        division,
-        timeBlock: timeBlocks[blockIndex % timeBlocks.length]
-      });
-      blockIndex++;
-    }
-    if (mixed.length > 0) combinations.push(mixed);
-    
-    return combinations;
-  }
-
-  // NEW: Test if allocation is valid
-  async testAllocation(day, allocation, inputData) {
-    // Create temporary tracking
+  // NEW: Test allocation considering progress and dynamic subject selection
+  async testAllocationWithProgress(day, allocation, inputData) {
     const tempTeacherAvailability = new Map();
     const tempLabAvailability = new Map();
     const scheduleDetails = [];
@@ -192,8 +187,8 @@ class LabSchedulingEngine {
       const { division, timeBlock } = alloc;
       const batches = inputData.divisions[division];
       
-      // Test if this division can be scheduled at this time block
-      const testResult = await this.testBatchSynchronization(
+      // Test with dynamic subject selection
+      const testResult = await this.testBatchSynchronizationWithProgress(
         division, 
         batches, 
         day, 
@@ -223,34 +218,36 @@ class LabSchedulingEngine {
     };
   }
 
-  // NEW: Test batch synchronization without committing
-  async testBatchSynchronization(division, batches, day, timeBlock, inputData, tempTeacherAvailability, tempLabAvailability) {
+  // NEW: Enhanced batch synchronization with dynamic subject selection
+  async testBatchSynchronizationWithProgress(division, batches, day, timeBlock, inputData, tempTeacherAvailability, tempLabAvailability) {
     const tentativeAssignments = [];
     const usedTeachers = new Set();
     const usedLabs = new Set();
     
     for (const batch of batches) {
-      const batchSubjects = inputData.lab_assignments[batch] || [];
+      // NEW: Get subjects with remaining hours using dynamic priority
+      const availableSubjects = this.getBatchAvailableSubjects(batch);
       
-      if (batchSubjects.length === 0) continue;
+      if (availableSubjects.length === 0) {
+        console.log(`ℹ️ Batch ${batch} has no remaining subjects - skipping`);
+        continue;
+      }
       
-      // Priority 1: Subjects with most remaining hours
-      const prioritizedSubjects = batchSubjects
-        .filter(s => (s.hours_completed || 0) < s.hours_per_week)
-        .sort((a, b) => (b.hours_per_week - (b.hours_completed || 0)) - (a.hours_per_week - (a.hours_completed || 0)));
+      // NEW: Dynamic subject selection (hours + teacher availability)
+      const prioritizedSubjects = this.prioritizeSubjectsByHoursAndTeacher(availableSubjects, usedTeachers, tempTeacherAvailability, day, timeBlock);
       
       let assignmentFound = false;
       
-      for (const subject of prioritizedSubjects) {
-        // Check teacher availability (both permanent and temporary)
-        const teacherKey1 = `${subject.teacher_id}-${day}-${timeBlock.start_slot}`;
-        const teacherKey2 = `${subject.teacher_id}-${day}-${timeBlock.end_slot}`;
+      for (const subjectProgress of prioritizedSubjects) {
+        // Check teacher availability
+        const teacherKey1 = `${subjectProgress.teacher_id}-${day}-${timeBlock.start_slot}`;
+        const teacherKey2 = `${subjectProgress.teacher_id}-${day}-${timeBlock.end_slot}`;
         
         const teacherBusy = this.teacherAvailability.has(teacherKey1) || 
                            this.teacherAvailability.has(teacherKey2) ||
                            tempTeacherAvailability.has(teacherKey1) ||
                            tempTeacherAvailability.has(teacherKey2) ||
-                           usedTeachers.has(subject.teacher_id);
+                           usedTeachers.has(subjectProgress.teacher_id);
         
         if (!teacherBusy) {
           // Find available lab room
@@ -268,15 +265,17 @@ class LabSchedulingEngine {
           if (availableLab) {
             tentativeAssignments.push({
               batch,
-              subject: subject.subject,
-              teacher_id: subject.teacher_id,
-              teacher_name: subject.teacher_name,
-              teacher_display_id: subject.teacher_display_id,
-              lab_id: availableLab.roomName
+              subject: subjectProgress.subject,
+              teacher_id: subjectProgress.teacher_id,
+              teacher_name: subjectProgress.teacher_name,
+              teacher_display_id: subjectProgress.teacher_display_id,
+              lab_id: availableLab.roomName,
+              progress_key: `${batch}-${subjectProgress.subject}`,
+              hours_to_complete: Math.min(2, subjectProgress.remaining_hours)
             });
             
             // Mark as temporarily used
-            usedTeachers.add(subject.teacher_id);
+            usedTeachers.add(subjectProgress.teacher_id);
             usedLabs.add(availableLab.roomName);
             
             tempTeacherAvailability.set(teacherKey1, true);
@@ -285,42 +284,211 @@ class LabSchedulingEngine {
             tempLabAvailability.set(`${availableLab.roomName}-${day}-${timeBlock.end_slot}`, true);
             
             assignmentFound = true;
+            console.log(`✅ ${batch}: ${subjectProgress.subject} (${subjectProgress.teacher_display_id}) - ${subjectProgress.remaining_hours}hrs remaining`);
             break;
           }
         }
       }
       
       if (!assignmentFound) {
-        return { 
-          success: false, 
-          reason: `Cannot assign subject to batch ${batch}` 
-        };
+        console.log(`⚠️ No assignment found for batch ${batch} with remaining subjects`);
+        // Don't fail the entire division if one batch can't be scheduled
+        // return { success: false, reason: `Cannot assign subject to batch ${batch}` };
       }
     }
     
     return {
-      success: true,
+      success: tentativeAssignments.length > 0,
       assignments: tentativeAssignments
     };
   }
 
-  // ENHANCED: Get all available time blocks considering restrictions for ALL divisions
+  // NEW: Get available subjects for a batch (subjects with remaining hours)
+  getBatchAvailableSubjects(batch) {
+    const availableSubjects = [];
+    
+    for (const [key, progress] of this.batchSubjectProgress) {
+      if (progress.batch === batch && progress.remaining_hours > 0) {
+        availableSubjects.push(progress);
+      }
+    }
+    
+    return availableSubjects;
+  }
+
+  // NEW: Dynamic subject prioritization (hours + teacher availability)
+  prioritizeSubjectsByHoursAndTeacher(subjects, usedTeachers, tempTeacherAvailability, day, timeBlock) {
+    return subjects
+      .filter(subject => !usedTeachers.has(subject.teacher_id)) // Filter out already used teachers
+      .sort((a, b) => {
+        // Priority 1: Teacher availability (prefer available teacher)
+        const teacherKeyA1 = `${a.teacher_id}-${day}-${timeBlock.start_slot}`;
+        const teacherKeyA2 = `${a.teacher_id}-${day}-${timeBlock.end_slot}`;
+        const teacherKeyB1 = `${b.teacher_id}-${day}-${timeBlock.start_slot}`;
+        const teacherKeyB2 = `${b.teacher_id}-${day}-${timeBlock.end_slot}`;
+        
+        const teacherABusy = this.teacherAvailability.has(teacherKeyA1) || 
+                           this.teacherAvailability.has(teacherKeyA2) ||
+                           tempTeacherAvailability.has(teacherKeyA1) ||
+                           tempTeacherAvailability.has(teacherKeyA2);
+        
+        const teacherBBusy = this.teacherAvailability.has(teacherKeyB1) || 
+                           this.teacherAvailability.has(teacherKeyB2) ||
+                           tempTeacherAvailability.has(teacherKeyB1) ||
+                           tempTeacherAvailability.has(teacherKeyB2);
+        
+        if (teacherABusy && !teacherBBusy) return 1;
+        if (!teacherABusy && teacherBBusy) return -1;
+        
+        // Priority 2: Most remaining hours
+        return b.remaining_hours - a.remaining_hours;
+      });
+  }
+
+  // ENHANCED: Commit assignments and update progress
+  commitBatchAssignmentsWithProgress(division, day, timeBlock, assignments) {
+    for (const assignment of assignments) {
+      const sessionData = {
+        day,
+        start_slot: timeBlock.start_slot,
+        end_slot: timeBlock.end_slot,
+        division,
+        batch: assignment.batch,
+        subject: assignment.subject,
+        teacher_id: assignment.teacher_id,
+        teacher_name: assignment.teacher_name,
+        teacher_display_id: assignment.teacher_display_id,
+        lab_id: assignment.lab_id,
+        formatted: `${assignment.subject}/${assignment.teacher_display_id}/${assignment.batch}/${assignment.lab_id}`,
+        is_2_hour_block: true,
+        hours_completed: assignment.hours_to_complete
+      };
+      
+      this.scheduleMatrix.push(sessionData);
+      
+      // Mark teacher as busy for BOTH slots
+      const teacherKey1 = `${assignment.teacher_id}-${day}-${timeBlock.start_slot}`;
+      const teacherKey2 = `${assignment.teacher_id}-${day}-${timeBlock.end_slot}`;
+      this.teacherAvailability.set(teacherKey1, true);
+      this.teacherAvailability.set(teacherKey2, true);
+      
+      // Mark lab as busy for BOTH slots
+      const labKey1 = `${assignment.lab_id}-${day}-${timeBlock.start_slot}`;
+      const labKey2 = `${assignment.lab_id}-${day}-${timeBlock.end_slot}`;
+      this.labAvailability.set(labKey1, true);
+      this.labAvailability.set(labKey2, true);
+      
+      // NEW: Update progress tracking
+      this.updateBatchProgress(assignment.progress_key, assignment.hours_to_complete);
+      
+      // Update legacy tracking for compatibility
+      const subjectKey = `${assignment.batch}-${assignment.subject}`;
+      const currentHours = this.subjectHoursCompleted.get(subjectKey) || 0;
+      this.subjectHoursCompleted.set(subjectKey, currentHours + assignment.hours_to_complete);
+    }
+    
+    // Log successful scheduling
+    this.resolutionLog.push({
+      action: "multi_day_scheduled",
+      division,
+      day,
+      time_block: `${timeBlock.start_slot}-${timeBlock.end_slot}`,
+      time_range: timeBlock.time_range,
+      assignments: assignments.map(a => `${a.batch}:${a.subject}(${a.hours_to_complete}hrs)`)
+    });
+    
+    console.log(`📝 MULTI-DAY COMMITTED: ${assignments.length} assignments for ${division} on ${day} at ${timeBlock.start_slot}-${timeBlock.end_slot}`);
+  }
+
+  // NEW: Update batch progress after scheduling
+  updateBatchProgress(progressKey, hoursCompleted) {
+    const progress = this.batchSubjectProgress.get(progressKey);
+    if (progress) {
+      progress.completed_hours += hoursCompleted;
+      progress.remaining_hours = Math.max(0, progress.total_hours - progress.completed_hours);
+      progress.status = progress.remaining_hours === 0 ? 'completed' : 'in_progress';
+      
+      console.log(`📊 Progress updated: ${progressKey} → ${progress.completed_hours}/${progress.total_hours} hours (${progress.remaining_hours} remaining)`);
+    }
+  }
+
+  // NEW: Log progress after each day
+  logDailyProgress(day) {
+    console.log(`\n📊 ================ ${day.toUpperCase()} PROGRESS SUMMARY ================`);
+    
+    const completed = [];
+    const inProgress = [];
+    const pending = [];
+    
+    for (const [key, progress] of this.batchSubjectProgress) {
+      if (progress.status === 'completed') {
+        completed.push(key);
+      } else if (progress.status === 'in_progress') {
+        inProgress.push(`${key} (${progress.remaining_hours}h left)`);
+      } else {
+        pending.push(key);
+      }
+    }
+    
+    console.log(`✅ Completed: ${completed.length} assignments`);
+    console.log(`🔄 In Progress: ${inProgress.length} assignments`);
+    console.log(`⏳ Pending: ${pending.length} assignments`);
+    
+    if (inProgress.length > 0) {
+      console.log(`🔄 In Progress Details: ${inProgress.slice(0, 5).join(', ')}${inProgress.length > 5 ? '...' : ''}`);
+    }
+  }
+
+  // Keep existing methods for compatibility...
+  generateAllocationCombinations(divisions, timeBlocks) {
+    const combinations = [];
+    
+    // Sequential allocation
+    if (timeBlocks.length >= divisions.length) {
+      const sequential = divisions.map((division, index) => ({
+        division,
+        timeBlock: timeBlocks[index]
+      }));
+      combinations.push(sequential);
+    }
+    
+    // Reverse allocation
+    if (timeBlocks.length >= divisions.length) {
+      const reverse = divisions.map((division, index) => ({
+        division,
+        timeBlock: timeBlocks[timeBlocks.length - 1 - index]
+      }));
+      combinations.push(reverse);
+    }
+    
+    // Mixed allocation
+    const mixed = [];
+    let blockIndex = 0;
+    for (const division of divisions) {
+      mixed.push({
+        division,
+        timeBlock: timeBlocks[blockIndex % timeBlocks.length]
+      });
+      blockIndex++;
+    }
+    if (mixed.length > 0) combinations.push(mixed);
+    
+    return combinations;
+  }
+
+  // Keep existing utility methods...
   getAllAvailable2HourBlocks(day, slots, inputData, divisions) {
     const blocks = [];
     
-    // Valid 2-hour consecutive pairs
     for (let i = 0; i < slots.length - 1; i++) {
       const startSlot = slots[i];
       const endSlot = slots[i + 1];
       
-      // Check if these slots are consecutive
       if (endSlot.slotNumber === startSlot.slotNumber + 1) {
-        // Check global restrictions (apply to all divisions)
         const globalBlocked = this.isSlotBlocked(day, startSlot.slotNumber, inputData.global_restrictions) ||
                              this.isSlotBlocked(day, endSlot.slotNumber, inputData.global_restrictions);
         
         if (!globalBlocked) {
-          // Check if this slot is viable for at least one division
           const viableForAnyDivision = divisions.some(division => {
             const divisionYear = this.getDivisionAcademicYear(division);
             const yearBlocked = this.isSlotBlockedForYear(day, startSlot.slotNumber, inputData.year_restrictions, divisionYear) ||
@@ -343,11 +511,11 @@ class LabSchedulingEngine {
     return blocks;
   }
 
-  // ENHANCED: Gather all input data with FIXED teacher name resolution
+  // Keep existing data gathering with enhancements
   async gatherInputData() {
     console.log('📥 Gathering input data from database...');
     
-    // Get all divisions with batches
+    // [Keep existing implementation but enhanced]
     const divisions = {};
     const divisionsData = await Division.find()
       .populate('syllabusId')
@@ -358,36 +526,26 @@ class LabSchedulingEngine {
       divisions[div.name] = batches;
     });
     
-    // FIXED: Get all teachers for name resolution using teacherId field
     const teachers = await Teacher.find().lean();
     const teacherMap = {};
-    const teacherIdMap = {}; // NEW: Map by teacherId instead of _id
+    const teacherIdMap = {};
     
     teachers.forEach(teacher => {
-      // Map by MongoDB _id (for database lookups)
       teacherMap[teacher._id.toString()] = {
         name: teacher.name,
         teacherId: teacher.teacherId,
         displayId: teacher.teacherId || teacher.name
       };
       
-      // NEW: Map by teacherId (for frontend display)
       if (teacher.teacherId) {
         teacherIdMap[teacher.teacherId.toString()] = {
           name: teacher.name,
           teacherId: teacher.teacherId,
-          displayId: teacher.name // Use name for display
+          displayId: teacher.name
         };
       }
     });
     
-    console.log('👥 Teacher mapping created:', {
-      totalTeachers: teachers.length,
-      teacherMapSize: Object.keys(teacherMap).length,
-      teacherIdMapSize: Object.keys(teacherIdMap).length
-    });
-    
-    // Get lab assignments by batch with ENHANCED teacher info
     const labAssignments = {};
     const assignmentsData = await LabAssignment.find()
       .populate('subjectId teacherId divisionId')
@@ -400,7 +558,6 @@ class LabSchedulingEngine {
         labAssignments[batchName] = [];
       }
       
-      // ENHANCED: Get teacher info from both maps
       const teacherMongoId = assignment.teacherId._id.toString();
       const teacherDbId = assignment.teacherId.teacherId;
       
@@ -410,45 +567,34 @@ class LabSchedulingEngine {
         displayId: 'Unknown'
       };
       
-      // Try to get teacher info from teacherId first (more reliable)
       if (teacherDbId && teacherIdMap[teacherDbId.toString()]) {
         teacherInfo = teacherIdMap[teacherDbId.toString()];
-        console.log(`✅ Found teacher by ID ${teacherDbId}: ${teacherInfo.name}`);
-      } 
-      // Fallback to MongoDB _id mapping
-      else if (teacherMap[teacherMongoId]) {
+      } else if (teacherMap[teacherMongoId]) {
         teacherInfo = teacherMap[teacherMongoId];
-        console.log(`✅ Found teacher by MongoDB ID: ${teacherInfo.name}`);
-      }
-      // Final fallback
-      else {
+      } else {
         teacherInfo = {
           name: assignment.teacherId.name || 'Unknown Teacher',
           teacherId: assignment.teacherId.teacherId || 'Unknown',
           displayId: assignment.teacherId.name || assignment.teacherId.teacherId || 'Unknown'
         };
-        console.log(`⚠️ Using fallback teacher info: ${teacherInfo.displayId}`);
       }
       
       labAssignments[batchName].push({
         subject: assignment.subjectId.name,
-        teacher_id: teacherMongoId, // Keep MongoDB ID for internal tracking
+        teacher_id: teacherMongoId,
         teacher_name: teacherInfo.name,
-        teacher_display_id: teacherInfo.displayId, // Use name for display
-        teacher_db_id: teacherDbId, // Store original teacherId
+        teacher_display_id: teacherInfo.displayId,
+        teacher_db_id: teacherDbId,
         hours_per_week: assignment.hoursPerWeek,
-        hours_completed: 0 // Reset for new scheduling
+        hours_completed: 0
       });
     });
     
-    // Get lab resources
     const resources = await Resource.find({ type: 'LAB', isActive: true }).lean();
     
-    // Get time slot configuration
     const timeConfig = await TimeSlotConfiguration.findOne().lean();
     const slots = timeConfig?.timeSlots || [];
     
-    // Get restrictions
     const globalRestrictions = await TimetableRestriction.find({
       scope: 'global',
       isActive: true
@@ -473,59 +619,7 @@ class LabSchedulingEngine {
     };
   }
 
-  // ENHANCED: Commit batch assignments with teacher name display
-  commitBatchAssignments(division, day, timeBlock, assignments) {
-    for (const assignment of assignments) {
-      const sessionData = {
-        day,
-        start_slot: timeBlock.start_slot,
-        end_slot: timeBlock.end_slot,
-        division,
-        batch: assignment.batch,
-        subject: assignment.subject,
-        teacher_id: assignment.teacher_id,
-        teacher_name: assignment.teacher_name,
-        teacher_display_id: assignment.teacher_display_id,
-        teacher_db_id: assignment.teacher_db_id,
-        lab_id: assignment.lab_id,
-        formatted: `${assignment.subject}/${assignment.teacher_display_id}/${assignment.batch}/${assignment.lab_id}`,
-        is_2_hour_block: true
-      };
-      
-      this.scheduleMatrix.push(sessionData);
-      
-      // Mark teacher as busy for BOTH slots
-      const teacherKey1 = `${assignment.teacher_id}-${day}-${timeBlock.start_slot}`;
-      const teacherKey2 = `${assignment.teacher_id}-${day}-${timeBlock.end_slot}`;
-      this.teacherAvailability.set(teacherKey1, true);
-      this.teacherAvailability.set(teacherKey2, true);
-      
-      // Mark lab as busy for BOTH slots
-      const labKey1 = `${assignment.lab_id}-${day}-${timeBlock.start_slot}`;
-      const labKey2 = `${assignment.lab_id}-${day}-${timeBlock.end_slot}`;
-      this.labAvailability.set(labKey1, true);
-      this.labAvailability.set(labKey2, true);
-      
-      // Update hours completed
-      const subjectKey = `${assignment.batch}-${assignment.subject}`;
-      const currentHours = this.subjectHoursCompleted.get(subjectKey) || 0;
-      this.subjectHoursCompleted.set(subjectKey, currentHours + 2);
-    }
-    
-    // Log successful scheduling
-    this.resolutionLog.push({
-      action: "intelligent_scheduled",
-      division,
-      day,
-      time_block: `${timeBlock.start_slot}-${timeBlock.end_slot}`,
-      time_range: timeBlock.time_range,
-      assignments: assignments.map(a => a.formatted)
-    });
-    
-    console.log(`📝 INTELLIGENTLY COMMITTED: ${assignments.length} assignments for ${division} on ${day} at ${timeBlock.start_slot}-${timeBlock.end_slot}`);
-  }
-
-  // Get division academic year mapping
+  // Keep existing utility methods
   getDivisionAcademicYear(division) {
     if (division.startsWith('SE-')) return 'SE';
     if (division.startsWith('TE-')) return 'TE';
@@ -533,7 +627,6 @@ class LabSchedulingEngine {
     return null;
   }
 
-  // Check if slot is blocked by restrictions
   isSlotBlocked(day, slotNumber, restrictions) {
     for (const restriction of restrictions) {
       if (restriction.days && restriction.timeSlots) {
@@ -546,13 +639,10 @@ class LabSchedulingEngine {
     return false;
   }
 
-  // Check if slot is blocked by year-specific restrictions for a specific academic year
   isSlotBlockedForYear(day, slotNumber, yearRestrictions, academicYear) {
     for (const restriction of yearRestrictions) {
       if (restriction.days && restriction.timeSlots && restriction.affectedYears) {
-        // Check if this restriction affects the given academic year
         const affectsThisYear = restriction.affectedYears.some(year => {
-          // Map year descriptions to academic years
           if (year === '2nd Year' && academicYear === 'SE') return true;
           if (year === '3rd Year' && academicYear === 'TE') return true;
           if (year === '4th Year' && academicYear === 'BE') return true;
@@ -569,7 +659,6 @@ class LabSchedulingEngine {
     return false;
   }
 
-  // Format restrictions from database
   formatRestrictions(restrictions) {
     return restrictions.map(r => ({
       restrictionName: r.restrictionName,
@@ -579,11 +668,20 @@ class LabSchedulingEngine {
     }));
   }
 
-  // Generate final output
+  // ENHANCED: Generate final output with multi-day metrics
   generateFinalOutput() {
     const totalBatches = this.scheduleMatrix.length;
     const scheduledDivisions = [...new Set(this.scheduleMatrix.map(s => s.division))].length;
-    const mondayScheduled = this.scheduleMatrix.filter(s => s.day === 'Monday').length;
+    const dayDistribution = {};
+    
+    this.scheduleMatrix.forEach(session => {
+      dayDistribution[session.day] = (dayDistribution[session.day] || 0) + 1;
+    });
+    
+    const completedSubjects = Array.from(this.batchSubjectProgress.values())
+      .filter(p => p.status === 'completed').length;
+    
+    const totalSubjects = this.batchSubjectProgress.size;
     
     return {
       success: true,
@@ -594,10 +692,10 @@ class LabSchedulingEngine {
         total_sessions_scheduled: totalBatches,
         divisions_scheduled: scheduledDivisions,
         conflicts_found: this.conflictReport.length,
-        monday_success: mondayScheduled,
-        intelligent_allocation_used: true,
-        same_day_completion: this.scheduleMatrix.length > 0 ? 
-          [...new Set(this.scheduleMatrix.map(s => s.day))].length === 1 : false,
+        multi_day_distribution: dayDistribution,
+        completed_subjects: completedSubjects,
+        total_subjects: totalSubjects,
+        completion_rate: ((completedSubjects / totalSubjects) * 100).toFixed(2),
         success_rate: this.conflictReport.length === 0 ? 100 : 
           ((scheduledDivisions / (scheduledDivisions + this.conflictReport.length)) * 100).toFixed(2)
       }
