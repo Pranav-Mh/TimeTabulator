@@ -21,8 +21,11 @@ const Generator = () => {
   });
 
   const [generatedTimetable, setGeneratedTimetable] = useState(null);
-  const [labScheduleData, setLabScheduleData] = useState(null); // NEW: Add lab data state
+  const [labScheduleData, setLabScheduleData] = useState(null);
   const [canGenerate, setCanGenerate] = useState(false);
+  
+  // ✅ NEW: Add state for lab requirement error
+  const [labRequirementError, setLabRequirementError] = useState(null);
 
   // ✅ Fetch all required data on component mount
   useEffect(() => {
@@ -160,9 +163,12 @@ const Generator = () => {
     }));
   };
 
-  // ✅ MODIFIED: Generate timetable with lab integration
+  // ✅ COMPLETELY UPDATED: Generate timetable with lab requirement error handling
   const generateTimetable = async () => {
     setConfig(prev => ({ ...prev, loading: true, error: '', success: '' }));
+    setLabRequirementError(null); // Clear previous lab errors
+    setGeneratedTimetable(null); // Clear previous timetable
+    setLabScheduleData(null); // Clear previous lab data
 
     try {
       // Build included years
@@ -173,34 +179,66 @@ const Generator = () => {
 
       console.log('Generating timetable for years:', includedYears);
 
-      // Call the enhanced timetable generation API (includes lab scheduling)
+      // ✅ Call the enhanced timetable generation API (includes lab requirement check)
       const response = await axios.post('http://localhost:5000/api/generator/generate-timetable', {
         includedYears: includedYears,
         includeBE: config.includeBE
       });
 
-      if (response.data.success) {
-        setGeneratedTimetable(response.data.timetable);
+      const result = response.data;
+
+      // ✅ Handle lab requirement error BEFORE displaying timetable
+      if (!response.status === 200 && result.error === 'INSUFFICIENT_LAB_CAPACITY') {
+        // Show lab requirement error to user - STOP HERE
+        setLabRequirementError({
+          type: 'LAB_CAPACITY_ERROR',
+          title: 'Additional Labs Required',
+          message: result.labRequirementError.message,
+          details: `Current Labs: ${result.labRequirementError.currentLabs}, Required: ${result.labRequirementError.minimumRequired}`,
+          recommendation: result.labRequirementError.recommendation,
+          additionalLabsNeeded: result.labRequirementError.additionalLabsNeeded,
+          currentLabs: result.labRequirementError.currentLabs,
+          minimumRequired: result.labRequirementError.minimumRequired
+        });
+        
+        // Don't display timetable - user needs to fix lab capacity first
+        setGeneratedTimetable(null);
+        setLabScheduleData(null);
+        
+        setConfig(prev => ({
+          ...prev,
+          loading: false,
+          error: '', // Don't show generic error - we have specific lab error
+          success: ''
+        }));
+        
+        return; // STOP processing here
+      }
+
+      // ✅ Normal success case - only reached if labs are sufficient
+      if (result.success) {
+        setGeneratedTimetable(result.timetable);
         
         // NEW: Set lab schedule data
-        if (response.data.lab_schedule) {
-          setLabScheduleData(response.data.lab_schedule);
-          console.log('🔬 Lab schedule received:', response.data.lab_schedule.metrics);
+        if (result.lab_schedule) {
+          setLabScheduleData(result.lab_schedule);
+          console.log('🔬 Lab schedule received:', result.lab_schedule.metrics);
         }
         
         // Enhanced success message
-        let successMessage = `Timetable generated successfully! Applied ${response.data.restrictionsApplied} restrictions across ${response.data.divisionsCount} divisions.`;
+        let successMessage = `Timetable generated successfully! Applied ${result.restrictionsApplied} restrictions across ${result.divisionsCount} divisions.`;
         
-        if (response.data.lab_schedule?.success) {
-          successMessage += ` 🔬 Lab scheduling: ${response.data.lab_schedule.metrics.total_sessions_scheduled} sessions scheduled.`;
-        } else if (response.data.lab_schedule?.error) {
-          successMessage += ` ⚠️ Lab scheduling had issues: ${response.data.lab_schedule.error}`;
+        if (result.lab_schedule?.success) {
+          successMessage += ` 🔬 Lab scheduling: ${result.lab_schedule.metrics.total_sessions_scheduled} sessions scheduled.`;
+        } else if (result.lab_schedule?.error) {
+          successMessage += ` ⚠️ Lab scheduling had issues: ${result.lab_schedule.error}`;
         }
 
         setConfig(prev => ({
           ...prev,
           success: successMessage,
-          loading: false
+          loading: false,
+          error: ''
         }));
       } else {
         throw new Error('Timetable generation failed');
@@ -208,11 +246,37 @@ const Generator = () => {
 
     } catch (error) {
       console.error('Error generating timetable:', error);
-      setConfig(prev => ({
-        ...prev,
-        error: error.response?.data?.error || 'Failed to generate timetable structure.',
-        loading: false
-      }));
+      
+      // ✅ Handle different types of errors
+      if (error.response?.status === 400 && error.response?.data?.error === 'INSUFFICIENT_LAB_CAPACITY') {
+        // Lab capacity error from server
+        const labError = error.response.data.labRequirementError;
+        setLabRequirementError({
+          type: 'LAB_CAPACITY_ERROR',
+          title: 'Additional Labs Required',
+          message: labError.message,
+          details: `Current Labs: ${labError.currentLabs}, Required: ${labError.minimumRequired}`,
+          recommendation: labError.recommendation,
+          additionalLabsNeeded: labError.additionalLabsNeeded,
+          currentLabs: labError.currentLabs,
+          minimumRequired: labError.minimumRequired
+        });
+        
+        setConfig(prev => ({
+          ...prev,
+          loading: false,
+          error: '', // Don't show generic error
+          success: ''
+        }));
+      } else {
+        // Generic error
+        setConfig(prev => ({
+          ...prev,
+          error: error.response?.data?.error || 'Failed to generate timetable structure.',
+          loading: false,
+          success: ''
+        }));
+      }
     }
   };
 
@@ -238,6 +302,62 @@ const Generator = () => {
           Generate comprehensive timetables with restrictions for SE and TE (BE optional)
         </p>
       </div>
+
+      {/* ✅ NEW: Lab Requirement Error Display */}
+      {labRequirementError && (
+        <div style={{ 
+          backgroundColor: '#fee2e2', 
+          border: '2px solid #fca5a5',
+          borderRadius: '12px', 
+          padding: '20px', 
+          marginBottom: '20px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
+            <span style={{ fontSize: '24px', marginRight: '12px' }}>🚨</span>
+            <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: '#dc2626', margin: 0 }}>
+              {labRequirementError.title}
+            </h3>
+          </div>
+          
+          <div style={{ marginBottom: '16px' }}>
+            <p style={{ fontSize: '16px', color: '#991b1b', margin: '0 0 8px 0' }}>
+              {labRequirementError.message}
+            </p>
+            <p style={{ fontSize: '14px', color: '#7f1d1d', margin: '0' }}>
+              {labRequirementError.details}
+            </p>
+          </div>
+          
+          <div style={{ 
+            backgroundColor: '#fef2f2', 
+            padding: '16px', 
+            borderRadius: '8px',
+            border: '1px solid #fecaca'
+          }}>
+            <div style={{ fontWeight: 'bold', color: '#dc2626', marginBottom: '8px' }}>
+              📋 What you need to do:
+            </div>
+            <div style={{ fontSize: '14px', color: '#991b1b', marginBottom: '12px' }}>
+              {labRequirementError.recommendation}
+            </div>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
+              <div style={{ padding: '12px', backgroundColor: '#fee2e2', borderRadius: '6px' }}>
+                <div style={{ fontWeight: 'bold', fontSize: '14px', color: '#dc2626' }}>Current Labs</div>
+                <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#991b1b' }}>{labRequirementError.currentLabs}</div>
+              </div>
+              <div style={{ padding: '12px', backgroundColor: '#dcfce7', borderRadius: '6px' }}>
+                <div style={{ fontWeight: 'bold', fontSize: '14px', color: '#16a34a' }}>Required Labs</div>
+                <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#15803d' }}>{labRequirementError.minimumRequired}</div>
+              </div>
+              <div style={{ padding: '12px', backgroundColor: '#fff3cd', borderRadius: '6px' }}>
+                <div style={{ fontWeight: 'bold', fontSize: '14px', color: '#d97706' }}>Labs to Add</div>
+                <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#ea580c' }}>+{labRequirementError.additionalLabsNeeded}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Error/Success Messages */}
       {config.error && (
@@ -415,7 +535,7 @@ const Generator = () => {
         </div>
 
         {/* Generation Summary */}
-        {canGenerate && (
+        {canGenerate && !labRequirementError && (
           <div style={{ 
             padding: '16px', 
             backgroundColor: '#e6ffe6', 
@@ -474,13 +594,14 @@ const Generator = () => {
               <li>Configure time slots in Restrictions tab</li>
               <li>Add global and year-wise bookings as needed</li>
               <li>Assign teachers to subjects in Lecture and Lab tabs</li>
+              <li>Add sufficient LAB resources for lab scheduling</li>
             </ul>
           </div>
         )}
       </div>
 
       {/* Generated Timetable Display with Lab Integration */}
-      {generatedTimetable && (
+      {generatedTimetable && !labRequirementError && (
         <div style={{ marginTop: '30px' }}>
           <h2 style={{ fontSize: '20px', marginBottom: '16px', color: '#333' }}>
             Generated Timetable Structure with Lab Assignments

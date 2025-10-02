@@ -7,22 +7,22 @@ const LectureAssignment = require('../models/LectureAssignment');
 const LabAssignment = require('../models/LabAssignment');
 const Syllabus = require('../models/Syllabus');
 const TimetableRestriction = require('../models/TimetableRestriction');
-const { runLabScheduler } = require('../controllers/labSchedulerController'); // ✅ ONLY ONE IMPORT
+const { runLabScheduler } = require('../controllers/labSchedulerController');
 
 // Get divisions for a specific academic year
 router.get('/divisions/:academicYear', async (req, res) => {
   try {
     const { academicYear } = req.params;
-    console.log(`Fetching divisions for academic year: ${academicYear}`);
-    
+    console.log('Fetching divisions for academic year:', academicYear);
+
     const divisions = await Division.find({ academicYear })
       .populate('syllabusId')
       .sort({ name: 1 });
-    
+
     console.log(`Found ${divisions.length} divisions for ${academicYear}:`, divisions.map(d => d.name));
-    
+
     if (divisions.length === 0) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         error: `No divisions found for academic year ${academicYear}`,
         suggestions: [
           'Check if syllabus is completed',
@@ -30,7 +30,7 @@ router.get('/divisions/:academicYear', async (req, res) => {
         ]
       });
     }
-    
+
     res.json(divisions);
   } catch (error) {
     console.error('Error fetching divisions:', error);
@@ -43,21 +43,19 @@ router.get('/restrictions', async (req, res) => {
   try {
     console.log('Fetching all timetable restrictions for generation...');
     
-    // Get global restrictions (priority 1)
-    const globalRestrictions = await TimetableRestriction.find({ 
+    const globalRestrictions = await TimetableRestriction.find({
       scope: 'global',
-      isActive: true 
+      isActive: true
     }).sort({ createdAt: 1 });
-    
-    // Get year-wise restrictions (priority 2)  
-    const yearWiseRestrictions = await TimetableRestriction.find({ 
+
+    const yearWiseRestrictions = await TimetableRestriction.find({
       scope: 'year-specific',
-      isActive: true 
+      isActive: true
     }).sort({ createdAt: 1 });
-    
+
     console.log(`Found ${globalRestrictions.length} global restrictions`);
     console.log(`Found ${yearWiseRestrictions.length} year-wise restrictions`);
-    
+
     res.json({
       global: globalRestrictions,
       yearWise: yearWiseRestrictions,
@@ -69,73 +67,145 @@ router.get('/restrictions', async (req, res) => {
   }
 });
 
-// ✅ FIXED: Generate complete timetable with restrictions AND lab scheduling
+// ✅ ENHANCED: Get latest lab schedule with proper teacher names
+router.get('/lab-schedule/latest', async (req, res) => {
+  try {
+    console.log('🔍 Fetching latest lab schedule for TimetableGrid display...');
+    
+    const LabScheduleSession = require('../models/LabScheduleSession');
+    
+    // Get all lab sessions with populated teacher data
+    const sessions = await LabScheduleSession.find()
+      .populate('teacher_id', 'name teacherId') // Populate teacher info
+      .sort({ createdAt: -1 })
+      .lean();
+    
+    if (sessions.length === 0) {
+      console.log('ℹ️ No lab schedule found in database');
+      return res.status(404).json({
+        success: false,
+        message: 'No lab schedule found'
+      });
+    }
+    
+    console.log(`✅ Found ${sessions.length} lab sessions for TimetableGrid display`);
+    
+    // ✅ ENHANCED: Resolve teacher names for proper display
+    const enhancedSessions = sessions.map(session => {
+      // Get teacher name from populated data or stored fields
+      const teacherName = session.teacherName || 
+                         session.teacher_name ||
+                         session.teacher_id?.name ||
+                         session.teacherDisplayId ||
+                         session.teacher_display_id ||
+                         `Teacher-${session.teacher_id?.teacherId || 'Unknown'}`;
+      
+      return {
+        ...session,
+        teacherName: teacherName,
+        teacher_name: teacherName, // For compatibility
+        teacherDisplayId: teacherName,
+        teacher_display_id: teacherName,
+        // Enhanced formatted display
+        formattedDisplay: `${session.subject} | ${teacherName} | ${session.lab_id}`,
+        formatted: session.formatted || `${session.subject}/${teacherName}/${session.batch}/${session.lab_id}`
+      };
+    });
+    
+    // Format data for TimetableGrid component
+    const formattedResponse = {
+      success: true,
+      schedule_matrix: enhancedSessions,
+      sessions: enhancedSessions,
+      total_sessions: enhancedSessions.length,
+      message: `Lab schedule with ${enhancedSessions.length} sessions`,
+      debug_info: {
+        sample_session: enhancedSessions[0],
+        total_sessions: enhancedSessions.length,
+        divisions_found: [...new Set(enhancedSessions.map(s => s.division))],
+        days_found: [...new Set(enhancedSessions.map(s => s.day))],
+        teacher_resolution: {
+          first_session_teacher: enhancedSessions[0]?.teacherName,
+          teacher_fields_available: Object.keys(enhancedSessions[0] || {}).filter(k => k.includes('teacher'))
+        }
+      }
+    };
+    
+    res.json(formattedResponse);
+    
+  } catch (error) {
+    console.error('❌ Error fetching lab schedule for display:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// COMPLETELY FIXED Generate complete timetable with lab requirement check
 router.post('/generate-timetable', async (req, res) => {
   try {
     const { includedYears, includeBE } = req.body;
     console.log('Generating timetable with restrictions and labs...', includedYears, includeBE);
-    
+
     // Get all divisions for included years
     const divisions = await Division.find({ academicYear: { $in: includedYears } });
-    console.log('Found', divisions.length, 'divisions for years', includedYears.join(','));
-    
-    // Get ALL active restrictions
+    console.log(`Found ${divisions.length} divisions for years ${includedYears.join(',')}`);
+
+    // Get ALL active restrictions with proper year filtering
     const allRestrictions = await TimetableRestriction.find({
       isActive: true,
-      $or: [
-        { scope: 'global' },
-        { scope: 'year-specific' }
-      ]
+      $or: [{ scope: 'global' }, { scope: 'year-specific' }]
     }).sort({ scope: 1, createdAt: 1 });
-    
-    console.log('Found', allRestrictions.length, 'active restrictions');
-    
+
+    console.log(`Found ${allRestrictions.length} active restrictions`);
+
     // Get time slots
     const TimeSlotConfiguration = require('../models/TimeSlotConfiguration');
     const timeConfig = await TimeSlotConfiguration.findOne();
     if (!timeConfig || !timeConfig.timeSlots) {
       return res.status(400).json({ error: 'Time slots not configured' });
     }
-    
-    console.log('Using', timeConfig.timeSlots.length, 'time slots');
-    
-    // Generate timetable structure with restrictions applied
-    const timetableStructure = generateTimetableWithRestrictions(
-      divisions, 
-      allRestrictions, 
-      timeConfig.timeSlots, 
-      includedYears
-    );
-    
-    // ✅ NEW: Run lab scheduling integration
+
+    console.log(`Using ${timeConfig.timeSlots.length} time slots`);
+
+    // ✅ Lab scheduling integration with requirement check
     console.log('🔬 Starting lab scheduling integration...');
-    let labScheduleResult = null;
     
     try {
-      labScheduleResult = await runLabScheduler();
+      const labResult = await runLabScheduler();
+      
+      // ✅ Check if lab requirement analysis failed
+      if (!labResult.success && labResult.error === 'INSUFFICIENT_LAB_CAPACITY') {
+        console.log('❌ Lab scheduling failed: Insufficient lab capacity');
+        
+        // 🛑 STOP HERE - Return error response to frontend
+        return res.status(400).json({
+          success: false,
+          error: 'INSUFFICIENT_LAB_CAPACITY',
+          labRequirementError: labResult.labRequirementError
+        });
+      }
+
       console.log('✅ Lab scheduling completed successfully');
-      console.log(`📊 Scheduled ${labScheduleResult.metrics.total_sessions_scheduled} lab sessions`);
+      console.log(`📊 Scheduled ${labResult.schedule_matrix?.length || 0} lab sessions`);
+
     } catch (labError) {
-      console.error('⚠️ Lab scheduling failed:', labError.message);
-      // Continue without lab scheduling - don't break main timetable generation
-      labScheduleResult = {
-        success: false,
-        error: labError.message,
-        schedule_matrix: [],
-        conflict_report: [{ error: 'Lab scheduling failed', reason: labError.message }],
-        metrics: {
-          total_sessions_scheduled: 0,
-          conflicts: 1,
-          success_rate: 0
-        }
-      };
+      console.warn('⚠️ Lab scheduling failed:', labError.message);
+      // Continue with timetable generation even if lab scheduling fails
     }
-    
-    // Enhanced response with both timetable structure and lab schedule
+
+    // ✅ Generate timetable structure with restrictions applied
+    const timetableStructure = generateTimetableWithRestrictions(
+      divisions,
+      allRestrictions,
+      timeConfig.timeSlots,
+      includedYears
+    );
+
     res.json({
       success: true,
       timetable: timetableStructure,
-      lab_schedule: labScheduleResult,
       divisionsCount: divisions.length,
       restrictionsApplied: allRestrictions.length,
       generatedAt: new Date().toISOString(),
@@ -148,32 +218,27 @@ router.post('/generate-timetable', async (req, res) => {
           slots: r.timeSlots,
           days: r.days,
           affectedYears: r.affectedYears
-        })),
-        labSchedulingSummary: {
-          total_sessions: labScheduleResult?.metrics?.total_sessions_scheduled || 0,
-          conflicts: labScheduleResult?.conflict_report?.length || 0,
-          success_rate: labScheduleResult?.metrics?.success_rate || 0
-        }
+        }))
       }
     });
-    
+
   } catch (error) {
-    console.error('Error generating timetable:', error);
+    console.error("Error generating timetable:", error);
     res.status(500).json({ 
-      error: 'Failed to generate timetable', 
-      details: error.message 
+      error: "Failed to generate timetable",
+      details: error.message
     });
   }
 });
 
-// ✅ Helper function to generate timetable with restrictions
+// Helper function to generate timetable with restrictions
 function generateTimetableWithRestrictions(divisions, restrictions, timeSlots, includedYears) {
   const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const timetable = {};
-  
+
   console.log('🏗️ Initializing empty timetable structure...');
   console.log('Divisions:', divisions.map(d => `${d.name} (${d.academicYear})`));
-  
+
   // Initialize empty timetable
   days.forEach(day => {
     timetable[day] = {};
@@ -188,100 +253,80 @@ function generateTimetableWithRestrictions(divisions, restrictions, timeSlots, i
       });
     });
   });
-  
-  console.log('📝 Applying restrictions to timetable...');
-  
+
+  console.log('📝 Applying restrictions to timetable...\n');
+
   // Apply restrictions with priority system
   restrictions.forEach((restriction, index) => {
-    console.log(`\n🔍 Processing restriction ${index + 1}:`, {
-      name: restriction.restrictionName,
-      scope: restriction.scope,
-      slots: restriction.timeSlots,
-      days: restriction.days,
-      affectedYears: restriction.affectedYears
-    });
-    
+    console.log(`🔍 Processing restriction ${index + 1}:`);
+    console.log(`  name: '${restriction.restrictionName}',`);
+    console.log(`  scope: '${restriction.scope}',`);
+    console.log(`  slots: [${restriction.timeSlots}],`);
+    console.log(`  days: [${restriction.days}],`);
+    console.log(`  affectedYears: [${restriction.affectedYears}]`);
+
     const priority = restriction.scope === 'global' ? 1 : 2;
-    
-    // ✅ FIXED: Check if required fields exist
+
     if (!restriction.timeSlots || !restriction.days || !restriction.restrictionName) {
-      console.warn('⚠️ Skipping restriction with missing data:', restriction._id);
+      console.warn('⚠️ Skipping restriction with missing data:', restriction.id);
       return;
     }
-    
+
     let applicationsCount = 0;
-    
+
     restriction.timeSlots.forEach(slotNum => {
-      // ✅ FIXED: Handle "All days" properly
       const daysToProcess = restriction.days.includes('All days') ? days : restriction.days;
-      
+
       daysToProcess.forEach(day => {
-        
         if (restriction.scope === 'global') {
           // Apply to ALL divisions
           divisions.forEach(division => {
-            if (timetable[day] && 
-                timetable[day][division.name] && 
-                timetable[day][division.name][slotNum]) {
-              
+            if (timetable[day] && timetable[day][division.name] && timetable[day][division.name][slotNum]) {
               timetable[day][division.name][slotNum] = {
                 activity: restriction.restrictionName,
-                type: 'global-restriction',  
+                type: 'global-restriction',
                 priority: 1,
-                restrictionId: restriction._id
+                restrictionId: restriction.id
               };
               applicationsCount++;
             }
           });
-          
         } else if (restriction.scope === 'year-specific') {
-          // ✅ FIXED: Apply to specific year divisions only with PROPER year mapping
           console.log(`    🎓 Year-specific restriction for years: ${restriction.affectedYears?.join(', ')}`);
           
-          // ✅ CRITICAL: CORRECT year mapping for your database structure
           const yearMappings = {
             '2nd Year': 'SE',
             '3rd Year': 'TE', 
             '4th Year': 'BE'
           };
-          
-          // Convert affected years to academic year codes
-          const academicYearCodes = restriction.affectedYears?.map(year => yearMappings[year] || year) || [];
+
+          const academicYearCodes = restriction.affectedYears?.map(year => yearMappings[year] || year);
           console.log(`    📚 Mapped to academic years: ${academicYearCodes.join(', ')}`);
-          
-          const targetDivisions = divisions.filter(div => 
-            academicYearCodes.includes(div.academicYear)
-          );
-          
+
+          const targetDivisions = divisions.filter(div => academicYearCodes.includes(div.academicYear));
           console.log(`    🎯 Target divisions: ${targetDivisions.map(d => d.name).join(', ')}`);
-          
+
           targetDivisions.forEach(division => {
-            if (timetable[day] && 
-                timetable[day][division.name] && 
-                timetable[day][division.name][slotNum]) {
-              
-              // Only apply if not already occupied by higher priority (global = 1)
+            if (timetable[day] && timetable[day][division.name] && timetable[day][division.name][slotNum]) {
               if (timetable[day][division.name][slotNum].priority < 2) {
                 timetable[day][division.name][slotNum] = {
                   activity: restriction.restrictionName,
                   type: 'year-restriction',
                   priority: 2,
-                  restrictionId: restriction._id,
-                  academicYear: restriction.affectedYears[0] // Original year string
+                  restrictionId: restriction.id,
+                  academicYear: restriction.affectedYears[0]
                 };
                 applicationsCount++;
-              } else {
-                console.log(`    ⚠️ Slot ${slotNum} on ${day} for ${division.name} already occupied by higher priority`);
               }
             }
           });
         }
       });
     });
-    
-    console.log(`    ✅ Applied ${applicationsCount} times to timetable`);
+
+    console.log(`    ✅ Applied ${applicationsCount} times to timetable\n`);
   });
-  
+
   // Debug: Count applied restrictions
   let globalCount = 0, yearCount = 0, freeCount = 0;
   days.forEach(day => {
@@ -294,12 +339,12 @@ function generateTimetableWithRestrictions(divisions, restrictions, timeSlots, i
       });
     });
   });
-  
-  console.log(`\n📊 Timetable generation complete:`);
+
+  console.log('📊 Timetable generation complete:');
   console.log(`  - Global restrictions: ${globalCount} slots`);
   console.log(`  - Year-specific restrictions: ${yearCount} slots`);
   console.log(`  - Free slots: ${freeCount} slots`);
-  
+
   return timetable;
 }
 
@@ -307,19 +352,18 @@ function generateTimetableWithRestrictions(divisions, restrictions, timeSlots, i
 router.get('/subjects/:academicYear', async (req, res) => {
   try {
     const { academicYear } = req.params;
-    console.log(`Fetching subjects for academic year: ${academicYear}`);
-    
+    console.log('Fetching subjects for academic year:', academicYear);
+
     const subjects = await Subject.find({ academicYear });
     const lectureAssignments = await LectureAssignment.find({ academicYear })
       .populate('subjectId')
-      .populate('teacherId')
+      .populate('teacherId') 
       .populate('divisionId');
-    
     const labAssignments = await LabAssignment.find({ academicYear })
       .populate('subjectId')
       .populate('teacherId')
       .populate('divisionId');
-    
+
     res.json({
       subjects,
       lectureAssignments,
@@ -335,6 +379,7 @@ router.get('/subjects/:academicYear', async (req, res) => {
 router.get('/teachers', async (req, res) => {
   try {
     const teachers = await Teacher.find();
+    console.log(`✅ Teachers fetched from MongoDB: ${teachers.length}`);
     res.json(teachers);
   } catch (error) {
     console.error('Error fetching teachers:', error);
@@ -350,7 +395,7 @@ router.get('/status', async (req, res) => {
     const lectureAssignments = await LectureAssignment.find();
     const labAssignments = await LabAssignment.find();
     const restrictions = await TimetableRestriction.find({ isActive: true });
-    
+
     const status = {
       syllabusReady: syllabuses.length > 0,
       teachersReady: teachers.length > 0,
@@ -360,7 +405,7 @@ router.get('/status', async (req, res) => {
       allReady: syllabuses.length > 0 && teachers.length > 0 && 
                 lectureAssignments.length > 0 && labAssignments.length > 0
     };
-    
+
     res.json(status);
   } catch (error) {
     console.error('Error checking generator status:', error);

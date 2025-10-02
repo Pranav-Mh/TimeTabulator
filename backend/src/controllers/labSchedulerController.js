@@ -10,26 +10,20 @@ const runLabScheduler = async () => {
     // Initialize scheduling engine
     const engine = new LabSchedulingEngine();
     
-    // Run scheduling algorithm
+    // Run scheduling algorithm (this includes requirement analysis)
     const result = await engine.scheduleAllLabs();
     
-    // Generate unique schedule ID
-    const scheduleId = new mongoose.Types.ObjectId();
-    
-    // Save results to database
-    if (result.schedule_matrix.length > 0) {
-      const sessions = result.schedule_matrix.map(session => ({
-        ...session,
-        schedule_id: scheduleId
-      }));
-      
-      await LabScheduleSession.insertMany(sessions);
-      console.log(`✅ Saved ${sessions.length} lab sessions to database`);
+    // ✅ Check if result indicates lab requirement failure
+    if (!result.success && result.error === 'INSUFFICIENT_LAB_CAPACITY') {
+      console.log('❌ Lab scheduling failed due to insufficient capacity');
+      return result; // Return the error structure directly
     }
     
+    // ✅ Normal success case
     return {
       success: true,
-      schedule_id: scheduleId,
+      schedule_id: result.schedule_id || new mongoose.Types.ObjectId(),
+      labRequirementAnalysis: result.labRequirementAnalysis,
       ...result
     };
     
@@ -89,9 +83,6 @@ const getLabSchedule = async (req, res) => {
 const getLabConflicts = async (req, res) => {
   try {
     const { scheduleId } = req.params;
-    
-    // This would contain logic to detect and return conflicts
-    // For now, return empty as conflicts are handled during scheduling
     
     res.json({
       success: true,

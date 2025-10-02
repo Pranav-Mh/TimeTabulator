@@ -1,11 +1,45 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 
 const TimetableGrid = ({ timetableData, labScheduleData }) => {
+  const [fetchedLabData, setFetchedLabData] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  // ✅ Fetch latest lab schedule from database if not provided
+  useEffect(() => {
+    if (!labScheduleData) {
+      fetchLatestLabSchedule();
+    }
+  }, [labScheduleData]);
+
+  const fetchLatestLabSchedule = async () => {
+    try {
+      setLoading(true);
+      console.log('🔍 Fetching latest lab schedule from database...');
+      
+      // ✅ Make sure this URL matches your backend route
+      const response = await fetch('http://localhost:5000/api/generator/lab-schedule/latest');
+      if (response.ok) {
+        const data = await response.json();
+        setFetchedLabData(data);
+        console.log('✅ Lab schedule fetched:', data);
+      } else {
+        console.log('ℹ️ No lab schedule found - Status:', response.status);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching lab schedule:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Use provided lab data or fetched data
+  const currentLabData = labScheduleData || fetchedLabData;
+
   if (!timetableData || typeof timetableData !== 'object') {
     return (
       <div style={{ 
-        padding: '20px', 
-        textAlign: 'center', 
+        padding: '20px',
+        textAlign: 'center',
         color: '#666',
         backgroundColor: '#f8f9fa',
         borderRadius: '8px'
@@ -19,17 +53,20 @@ const TimetableGrid = ({ timetableData, labScheduleData }) => {
   const divisions = days.length > 0 ? Object.keys(timetableData[days[0]]) : [];
   const slots = divisions.length > 0 ? Object.keys(timetableData[days[0]][divisions[0]]) : [];
 
-  // Enhanced lab merging with 2-hour block support
+  // ✅ Enhanced lab merging with PROPER TEACHER NAME display
   const mergeLabsWithTimetable = (timetableStructure, labSchedule) => {
-    if (!labSchedule?.schedule_matrix) return { timetable: timetableStructure, labBlocks: {} };
+    if (!labSchedule?.schedule_matrix && !labSchedule?.sessions) {
+      return { timetable: timetableStructure, labBlocks: {} };
+    }
 
-    console.log('🔬 Processing lab schedule:', labSchedule.schedule_matrix);
+    // Handle both possible data structures
+    const labSessions = labSchedule.schedule_matrix || labSchedule.sessions || [];
+    console.log('🔬 Processing lab schedule:', labSessions.length, 'sessions');
     
     // Group labs by division and time block
     const labBlocksByDivision = {};
-    const occupiedSlots = new Set(); // Track which slots are occupied by labs
     
-    labSchedule.schedule_matrix.forEach(lab => {
+    labSessions.forEach(lab => {
       const divisionKey = `${lab.day}-${lab.division}`;
       
       if (!labBlocksByDivision[divisionKey]) {
@@ -37,7 +74,7 @@ const TimetableGrid = ({ timetableData, labScheduleData }) => {
       }
       
       // Find existing block for this time slot
-      let existingBlock = labBlocksByDivision[divisionKey].find(block => 
+      let existingBlock = labBlocksByDivision[divisionKey].find(block =>
         block.start_slot === lab.start_slot && block.end_slot === lab.end_slot
       );
       
@@ -53,20 +90,21 @@ const TimetableGrid = ({ timetableData, labScheduleData }) => {
         labBlocksByDivision[divisionKey].push(existingBlock);
       }
       
+      // ✅ Enhanced batch data with proper teacher name resolution
+      const teacherDisplayName = lab.teacherName || lab.teacher_name || 
+                                lab.teacherDisplayId || lab.teacher_display_id || 
+                                `T:${lab.teacher_id?.slice(-4) || 'N/A'}`;
+      
       // Add batch to this block
       existingBlock.batches.push({
         batch: lab.batch,
         subject: lab.subject,
         teacher_id: lab.teacher_id,
-        teacher_name: lab.teacher_name, // FIXED: Get teacher name
-        teacher_display_id: lab.teacher_display_id, // FIXED: Get display ID
+        teacher_name: teacherDisplayName,  // ✅ Use resolved teacher name
+        teacher_display_id: lab.teacherDisplayId || lab.teacher_display_id,
         lab_id: lab.lab_id,
-        formatted: lab.formatted
+        formatted: lab.formattedDisplay || lab.formatted
       });
-      
-      // Mark slots as occupied
-      occupiedSlots.add(`${lab.day}-${lab.division}-${lab.start_slot}`);
-      occupiedSlots.add(`${lab.day}-${lab.division}-${lab.end_slot}`);
     });
 
     // Create merged structure
@@ -79,9 +117,13 @@ const TimetableGrid = ({ timetableData, labScheduleData }) => {
       blocks.forEach(block => {
         const { day, division, start_slot, end_slot } = block;
         
-        // Check if slots are free or can be overridden
-        const startSlotContent = mergedStructure[day]?.[division]?.[start_slot];
-        const endSlotContent = mergedStructure[day]?.[division]?.[end_slot];
+        // Check if slots exist in timetable structure
+        if (!mergedStructure[day] || !mergedStructure[day][division]) {
+          return;
+        }
+
+        const startSlotContent = mergedStructure[day][division][start_slot];
+        const endSlotContent = mergedStructure[day][division][end_slot];
         
         const canOverride = (slot) => !slot || !slot.activity || slot.activity === 'Free' || slot.type === 'free';
         
@@ -114,9 +156,9 @@ const TimetableGrid = ({ timetableData, labScheduleData }) => {
   };
 
   // Merge lab data with timetable structure
-  const { timetable: finalTimetableData, labBlocks } = mergeLabsWithTimetable(timetableData, labScheduleData);
+  const { timetable: finalTimetableData, labBlocks } = mergeLabsWithTimetable(timetableData, currentLabData);
 
-  const getActivityStyle = (activity, slotNum) => {
+  const getActivityStyle = (activity) => {
     if (!activity || !activity.activity) {
       return {
         backgroundColor: '#f8f9fa',
@@ -140,12 +182,6 @@ const TimetableGrid = ({ timetableData, labScheduleData }) => {
           border: '2px solid #17a2b8',
           fontWeight: '600'
         };
-      case 'lecture':
-        return {
-          backgroundColor: '#d4edda',
-          color: '#155724',
-          border: '1px solid #c3e6cb'
-        };
       case 'lab-block':
         return {
           backgroundColor: '#74b9ff',
@@ -155,10 +191,6 @@ const TimetableGrid = ({ timetableData, labScheduleData }) => {
         };
       case 'lab-continuation':
         return {
-          backgroundColor: '#74b9ff',
-          color: 'white',
-          border: '3px solid #0984e3',
-          opacity: 0.8,
           display: 'none' // Hide continuation cells
         };
       default:
@@ -190,7 +222,7 @@ const TimetableGrid = ({ timetableData, labScheduleData }) => {
   };
 
   // Calculate colspan for 2-hour lab blocks
-  const getColspan = (activity, division, day, slotNum) => {
+  const getColspan = (activity) => {
     if (activity?.type === 'lab-block') {
       return 2; // Span 2 columns for 2-hour block
     }
@@ -199,15 +231,29 @@ const TimetableGrid = ({ timetableData, labScheduleData }) => {
 
   return (
     <div style={{ 
-      overflowX: 'auto', 
+      overflowX: 'auto',
       backgroundColor: 'white',
       borderRadius: '12px',
       boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
       padding: '24px',
       marginTop: '20px'
     }}>
+      {/* Loading indicator */}
+      {loading && (
+        <div style={{
+          backgroundColor: '#e3f2fd',
+          padding: '12px',
+          borderRadius: '6px',
+          marginBottom: '16px',
+          textAlign: 'center',
+          color: '#1565c0'
+        }}>
+          🔄 Loading lab schedule data...
+        </div>
+      )}
+
       {/* Lab Schedule Summary */}
-      {labScheduleData?.success && (
+      {currentLabData && (
         <div style={{
           backgroundColor: '#e3f2fd',
           padding: '16px',
@@ -219,29 +265,23 @@ const TimetableGrid = ({ timetableData, labScheduleData }) => {
             🔬 Lab Scheduling Results
           </h3>
           <div style={{ display: 'flex', gap: '20px', fontSize: '14px', color: '#1976d2', flexWrap: 'wrap' }}>
-            <span><strong>Sessions Scheduled:</strong> {labScheduleData.metrics?.total_sessions_scheduled || 0}</span>
-            <span><strong>Divisions:</strong> {labScheduleData.metrics?.divisions_scheduled || 0}</span>
-            <span><strong>Success Rate:</strong> {labScheduleData.metrics?.success_rate || 0}%</span>
+            <span><strong>Sessions Scheduled:</strong> {currentLabData.schedule_matrix?.length || currentLabData.sessions?.length || 0}</span>
             <span><strong>Lab Blocks:</strong> {Object.keys(labBlocks).length}</span>
+            <span><strong>Data Source:</strong> {labScheduleData ? 'Live' : 'Database'}</span>
           </div>
-          {labScheduleData.conflict_report?.length > 0 && (
-            <div style={{ marginTop: '8px', fontSize: '12px', color: '#d32f2f' }}>
-              ⚠️ {labScheduleData.conflict_report.length} conflicts found
-            </div>
-          )}
         </div>
       )}
 
       <table style={{ 
-        width: '100%', 
+        width: '100%',
         borderCollapse: 'collapse',
         fontSize: '13px'
       }}>
         <thead>
           <tr>
             <th style={{ 
-              border: '2px solid #495057', 
-              padding: '12px 8px', 
+              border: '2px solid #495057',
+              padding: '12px 8px',
               backgroundColor: '#495057',
               color: 'white',
               fontWeight: '600',
@@ -251,8 +291,8 @@ const TimetableGrid = ({ timetableData, labScheduleData }) => {
             </th>
             {slots.map(slot => (
               <th key={slot} style={{ 
-                border: '2px solid #495057', 
-                padding: '12px 6px', 
+                border: '2px solid #495057',
+                padding: '12px 6px',
                 backgroundColor: '#495057',
                 color: 'white',
                 fontWeight: '600',
@@ -288,12 +328,12 @@ const TimetableGrid = ({ timetableData, labScheduleData }) => {
               {divisions.map(division => (
                 <tr key={`${day}-${division}`}>
                   <td style={{ 
-                    border: '2px solid #dee2e6', 
+                    border: '2px solid #dee2e6',
                     padding: '10px 12px',
                     backgroundColor: '#f8f9fa',
                     fontWeight: '700',
-                    color: division.startsWith('SE') ? '#2563eb' : 
-                          division.startsWith('TE') ? '#059669' : '#dc2626',
+                    color: division.startsWith('SE') ? '#2563eb' :
+                           division.startsWith('TE') ? '#059669' : '#dc2626',
                     fontSize: '14px'
                   }}>
                     {division}
@@ -307,16 +347,16 @@ const TimetableGrid = ({ timetableData, labScheduleData }) => {
                       return null;
                     }
                     
-                    const style = getActivityStyle(activity, slotNum);
-                    const colspan = getColspan(activity, division, day, slotNum);
+                    const style = getActivityStyle(activity);
+                    const colspan = getColspan(activity);
                     const isLabBlock = activity?.type === 'lab-block';
                     
                     return (
-                      <td 
-                        key={slot} 
+                      <td
+                        key={slot}
                         colSpan={colspan}
-                        style={{ 
-                          border: '2px solid #dee2e6', 
+                        style={{
+                          border: '2px solid #dee2e6',
                           padding: '8px 6px',
                           textAlign: 'center',
                           minHeight: '80px',
@@ -328,10 +368,10 @@ const TimetableGrid = ({ timetableData, labScheduleData }) => {
                         {activity && activity.activity ? (
                           <div>
                             {isLabBlock ? (
-                              // Enhanced 2-hour lab block display with TEACHER NAMES
+                              // ✅ FIXED: 2-hour lab block display with PROPER teacher names
                               <div style={{ padding: '4px' }}>
-                                <div style={{ 
-                                  fontWeight: '800', 
+                                <div style={{
+                                  fontWeight: '800',
                                   fontSize: '12px',
                                   marginBottom: '8px',
                                   borderBottom: '1px solid rgba(255,255,255,0.3)',
@@ -340,9 +380,9 @@ const TimetableGrid = ({ timetableData, labScheduleData }) => {
                                   2-HOUR LAB BLOCK
                                 </div>
                                 
-                                {/* Display all batches in this block */}
+                                {/* Display all batches in this block with PROPER teacher names */}
                                 <div style={{ display: 'grid', gap: '4px' }}>
-                                  {activity.batches.map((batch, index) => (
+                                  {activity.batches?.map((batch, index) => (
                                     <div key={index} style={{
                                       backgroundColor: 'rgba(255,255,255,0.2)',
                                       padding: '3px 6px',
@@ -353,18 +393,18 @@ const TimetableGrid = ({ timetableData, labScheduleData }) => {
                                         {batch.batch}: {batch.subject}
                                       </div>
                                       <div style={{ opacity: 0.9, fontSize: '9px' }}>
-                                        {/* FIXED: Show teacher name instead of ID */}
-                                        {batch.lab_id} | {batch.teacher_display_id || batch.teacher_name || `T:${batch.teacher_id.slice(-4)}`}
+                                        {/* ✅ FIXED: Display proper teacher name instead of ID */}
+                                        {batch.lab_id} | {batch.teacher_name}
                                       </div>
                                     </div>
-                                  ))}
+                                  )) || []}
                                 </div>
                                 
-                                <div style={{ 
-                                  marginTop: '6px', 
-                                  fontSize: '9px', 
+                                <div style={{
+                                  marginTop: '6px',
+                                  fontSize: '9px',
                                   opacity: 0.8,
-                                  fontStyle: 'italic' 
+                                  fontStyle: 'italic'
                                 }}>
                                   Slots {activity.start_slot}-{activity.end_slot}
                                 </div>
@@ -372,8 +412,8 @@ const TimetableGrid = ({ timetableData, labScheduleData }) => {
                             ) : (
                               // Regular restriction display
                               <div>
-                                <div style={{ 
-                                  fontWeight: activity.type === 'global-restriction' ? '700' : '600', 
+                                <div style={{
+                                  fontWeight: activity.type === 'global-restriction' ? '700' : '600',
                                   fontSize: '12px',
                                   lineHeight: '1.2'
                                 }}>
@@ -405,9 +445,9 @@ const TimetableGrid = ({ timetableData, labScheduleData }) => {
               
               {/* Spacer between days */}
               <tr style={{ height: '10px' }}>
-                <td colSpan={slots.length + 1} style={{ 
-                  backgroundColor: 'transparent', 
-                  border: 'none' 
+                <td colSpan={slots.length + 1} style={{
+                  backgroundColor: 'transparent',
+                  border: 'none'
                 }}></td>
               </tr>
             </React.Fragment>
@@ -417,15 +457,15 @@ const TimetableGrid = ({ timetableData, labScheduleData }) => {
       
       {/* Enhanced Legend */}
       <div style={{ 
-        marginTop: '24px', 
+        marginTop: '24px',
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
         gap: '12px',
         fontSize: '13px'
       }}>
         <div style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
+          display: 'flex',
+          alignItems: 'center',
           gap: '8px',
           padding: '8px',
           backgroundColor: '#fff3cd',
@@ -433,8 +473,8 @@ const TimetableGrid = ({ timetableData, labScheduleData }) => {
           border: '1px solid #ffc107'
         }}>
           <div style={{ 
-            width: '16px', 
-            height: '16px', 
+            width: '16px',
+            height: '16px',
             backgroundColor: '#fff3cd',
             border: '2px solid #ffc107',
             borderRadius: '3px'
@@ -443,8 +483,8 @@ const TimetableGrid = ({ timetableData, labScheduleData }) => {
         </div>
         
         <div style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
+          display: 'flex',
+          alignItems: 'center',
           gap: '8px',
           padding: '8px',
           backgroundColor: '#d1ecf1',
@@ -452,8 +492,8 @@ const TimetableGrid = ({ timetableData, labScheduleData }) => {
           border: '1px solid #17a2b8'
         }}>
           <div style={{ 
-            width: '16px', 
-            height: '16px', 
+            width: '16px',
+            height: '16px',
             backgroundColor: '#d1ecf1',
             border: '2px solid #17a2b8',
             borderRadius: '3px'
@@ -462,8 +502,8 @@ const TimetableGrid = ({ timetableData, labScheduleData }) => {
         </div>
 
         <div style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
+          display: 'flex',
+          alignItems: 'center',
           gap: '8px',
           padding: '8px',
           backgroundColor: '#74b9ff',
@@ -472,18 +512,18 @@ const TimetableGrid = ({ timetableData, labScheduleData }) => {
           color: 'white'
         }}>
           <div style={{ 
-            width: '32px', 
-            height: '16px', 
+            width: '32px',
+            height: '16px',
             backgroundColor: '#74b9ff',
             border: '2px solid #0984e3',
             borderRadius: '3px'
           }}></div>
-          <span style={{ fontWeight: '700' }}>🔬 2-Hour Lab Blocks (All Batches)</span>
+          <span style={{ fontWeight: '700' }}>🔬 2-Hour Lab Blocks</span>
         </div>
         
         <div style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
+          display: 'flex',
+          alignItems: 'center',
           gap: '8px',
           padding: '8px',
           backgroundColor: '#f8f9fa',
@@ -491,8 +531,8 @@ const TimetableGrid = ({ timetableData, labScheduleData }) => {
           border: '1px solid #dee2e6'
         }}>
           <div style={{ 
-            width: '16px', 
-            height: '16px', 
+            width: '16px',
+            height: '16px',
             backgroundColor: '#f8f9fa',
             border: '1px solid #dee2e6',
             borderRadius: '3px'
@@ -500,34 +540,6 @@ const TimetableGrid = ({ timetableData, labScheduleData }) => {
           <span>📝 Free Slots</span>
         </div>
       </div>
-
-      {/* Debug Info */}
-      {labScheduleData?.schedule_matrix && (
-        <div style={{ 
-          marginTop: '20px',
-          padding: '12px',
-          backgroundColor: '#f1f3f4',
-          borderRadius: '6px',
-          fontSize: '11px',
-          fontFamily: 'monospace'
-        }}>
-          <details>
-            <summary style={{ cursor: 'pointer', fontWeight: '600' }}>
-              🔧 Debug: Lab Schedule Data ({labScheduleData.schedule_matrix.length} sessions)
-            </summary>
-            <div style={{ marginTop: '8px', maxHeight: '200px', overflowY: 'auto' }}>
-              {labScheduleData.schedule_matrix.map((session, index) => (
-                <div key={index} style={{ margin: '2px 0' }}>
-                  {session.day} | {session.division} | {session.batch} | 
-                  Slots {session.start_slot}-{session.end_slot} | 
-                  {session.subject} | {session.lab_id} | 
-                  Teacher: {session.teacher_display_id || session.teacher_name || 'Unknown'}
-                </div>
-              ))}
-            </div>
-          </details>
-        </div>
-      )}
     </div>
   );
 };
