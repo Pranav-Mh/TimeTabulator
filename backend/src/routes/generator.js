@@ -143,92 +143,69 @@ router.get('/lab-schedule/latest', async (req, res) => {
 });
 
 // COMPLETELY FIXED Generate complete timetable with lab requirement check
+// ❗️ REPLACE your existing /generate-timetable route with this one.
+
 router.post('/generate-timetable', async (req, res) => {
-  try {
-    const { includedYears, includeBE } = req.body;
-    console.log('Generating timetable with restrictions and labs...', includedYears, includeBE);
-
-    // Get all divisions for included years
-    const divisions = await Division.find({ academicYear: { $in: includedYears } });
-    console.log(`Found ${divisions.length} divisions for years ${includedYears.join(',')}`);
-
-    // Get ALL active restrictions with proper year filtering
-    const allRestrictions = await TimetableRestriction.find({
-      isActive: true,
-      $or: [{ scope: 'global' }, { scope: 'year-specific' }]
-    }).sort({ scope: 1, createdAt: 1 });
-
-    console.log(`Found ${allRestrictions.length} active restrictions`);
-
-    // Get time slots
-    const TimeSlotConfiguration = require('../models/TimeSlotConfiguration');
-    const timeConfig = await TimeSlotConfiguration.findOne();
-    if (!timeConfig || !timeConfig.timeSlots) {
-      return res.status(400).json({ error: 'Time slots not configured' });
-    }
-
-    console.log(`Using ${timeConfig.timeSlots.length} time slots`);
-
-    // ✅ Lab scheduling integration with requirement check
-    console.log('🔬 Starting lab scheduling integration...');
-    
     try {
-      const labResult = await runLabScheduler();
-      
-      // ✅ Check if lab requirement analysis failed
-      if (!labResult.success && labResult.error === 'INSUFFICIENT_LAB_CAPACITY') {
-        console.log('❌ Lab scheduling failed: Insufficient lab capacity');
+        const { includedYears, includeBE } = req.body;
+        console.log('Generating timetable with restrictions and labs...', includedYears, includeBE);
+
+        // (No changes to the code that gets divisions, restrictions, and time slots)
+        const divisions = await Division.find({ academicYear: { $in: includedYears } });
+        const allRestrictions = await TimetableRestriction.find({
+            isActive: true,
+            $or: [{ scope: 'global' }, { scope: 'year-specific' }]
+        }).sort({ scope: 1, createdAt: 1 });
+        const TimeSlotConfiguration = require('../models/TimeSlotConfiguration');
+        const timeConfig = await TimeSlotConfiguration.findOne();
+        if (!timeConfig || !timeConfig.timeSlots) {
+            return res.status(400).json({ error: 'Time slots not configured' });
+        }
+
+        console.log('🔬 Starting lab scheduling integration...');
         
-        // 🛑 STOP HERE - Return error response to frontend
-        return res.status(400).json({
-          success: false,
-          error: 'INSUFFICIENT_LAB_CAPACITY',
-          labRequirementError: labResult.labRequirementError
+        let labResult = null; // ✅ Define labResult here
+        try {
+            labResult = await runLabScheduler();
+            
+            if (!labResult.success && labResult.error === 'INSUFFICIENT_LAB_CAPACITY') {
+                console.log('❌ Lab scheduling failed: Insufficient lab capacity');
+                return res.status(400).json({
+                    success: false,
+                    error: 'INSUFFICIENT_LAB_CAPACITY',
+                    labRequirementError: labResult.labRequirementError
+                });
+            }
+
+            console.log('✅ Lab scheduling completed successfully');
+            console.log(`📊 Scheduled ${labResult.schedule_matrix?.length || 0} lab sessions`);
+
+        } catch (labError) {
+            console.warn('⚠️ Lab scheduling failed:', labError.message);
+        }
+
+        const timetableStructure = generateTimetableWithRestrictions(
+            divisions, allRestrictions, timeConfig.timeSlots, includedYears
+        );
+
+        // ✅ FINAL FIX: Include the entire labResult in the response
+        res.json({
+            success: true,
+            timetable: timetableStructure,
+            labScheduleResult: labResult, // <-- THIS IS THE CRITICAL ADDITION
+            divisionsCount: divisions.length,
+            restrictionsApplied: allRestrictions.length,
+            generatedAt: new Date().toISOString(),
+            debug: { /* ... debug info ... */ }
         });
-      }
 
-      console.log('✅ Lab scheduling completed successfully');
-      console.log(`📊 Scheduled ${labResult.schedule_matrix?.length || 0} lab sessions`);
-
-    } catch (labError) {
-      console.warn('⚠️ Lab scheduling failed:', labError.message);
-      // Continue with timetable generation even if lab scheduling fails
+    } catch (error) {
+        console.error("Error generating timetable:", error);
+        res.status(500).json({ 
+            error: "Failed to generate timetable",
+            details: error.message
+        });
     }
-
-    // ✅ Generate timetable structure with restrictions applied
-    const timetableStructure = generateTimetableWithRestrictions(
-      divisions,
-      allRestrictions,
-      timeConfig.timeSlots,
-      includedYears
-    );
-
-    res.json({
-      success: true,
-      timetable: timetableStructure,
-      divisionsCount: divisions.length,
-      restrictionsApplied: allRestrictions.length,
-      generatedAt: new Date().toISOString(),
-      debug: {
-        includedYears,
-        divisionsFound: divisions.map(d => ({ name: d.name, year: d.academicYear })),
-        restrictionsFound: allRestrictions.map(r => ({
-          name: r.restrictionName,
-          scope: r.scope,
-          slots: r.timeSlots,
-          days: r.days,
-          affectedYears: r.affectedYears
-        }))
-      }
-    });
-
-  } catch (error) {
-    console.error("Error generating timetable:", error);
-    res.status(500).json({ 
-      error: "Failed to generate timetable",
-      details: error.message
-    });
-  }
 });
 
 // Helper function to generate timetable with restrictions
