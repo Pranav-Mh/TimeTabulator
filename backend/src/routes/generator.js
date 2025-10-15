@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
+
 const Division = require('../models/Division');
 const Subject = require('../models/Subject');
 const Teacher = require('../models/Teacher');
@@ -7,7 +9,9 @@ const LectureAssignment = require('../models/LectureAssignment');
 const LabAssignment = require('../models/LabAssignment');
 const Syllabus = require('../models/Syllabus');
 const TimetableRestriction = require('../models/TimetableRestriction');
+const TimeSlotConfiguration = require('../models/TimeSlotConfiguration');
 const { runLabScheduler } = require('../controllers/labSchedulerController');
+const { runLectureScheduler } = require('../controllers/lectureSchedulerController');
 
 // Get divisions for a specific academic year
 router.get('/divisions/:academicYear', async (req, res) => {
@@ -67,16 +71,15 @@ router.get('/restrictions', async (req, res) => {
   }
 });
 
-// ✅ ENHANCED: Get latest lab schedule with proper teacher names
+// Get latest lab schedule
 router.get('/lab-schedule/latest', async (req, res) => {
   try {
     console.log('🔍 Fetching latest lab schedule for TimetableGrid display...');
     
     const LabScheduleSession = require('../models/LabScheduleSession');
     
-    // Get all lab sessions with populated teacher data
     const sessions = await LabScheduleSession.find()
-      .populate('teacher_id', 'name teacherId') // Populate teacher info
+      .populate('teacher_id', 'name teacherId')
       .sort({ createdAt: -1 })
       .lean();
     
@@ -90,9 +93,7 @@ router.get('/lab-schedule/latest', async (req, res) => {
     
     console.log(`✅ Found ${sessions.length} lab sessions for TimetableGrid display`);
     
-    // ✅ ENHANCED: Resolve teacher names for proper display
     const enhancedSessions = sessions.map(session => {
-      // Get teacher name from populated data or stored fields
       const teacherName = session.teacherName || 
                          session.teacher_name ||
                          session.teacher_id?.name ||
@@ -103,32 +104,20 @@ router.get('/lab-schedule/latest', async (req, res) => {
       return {
         ...session,
         teacherName: teacherName,
-        teacher_name: teacherName, // For compatibility
+        teacher_name: teacherName,
         teacherDisplayId: teacherName,
         teacher_display_id: teacherName,
-        // Enhanced formatted display
         formattedDisplay: `${session.subject} | ${teacherName} | ${session.lab_id}`,
         formatted: session.formatted || `${session.subject}/${teacherName}/${session.batch}/${session.lab_id}`
       };
     });
     
-    // Format data for TimetableGrid component
     const formattedResponse = {
       success: true,
       schedule_matrix: enhancedSessions,
       sessions: enhancedSessions,
       total_sessions: enhancedSessions.length,
-      message: `Lab schedule with ${enhancedSessions.length} sessions`,
-      debug_info: {
-        sample_session: enhancedSessions[0],
-        total_sessions: enhancedSessions.length,
-        divisions_found: [...new Set(enhancedSessions.map(s => s.division))],
-        days_found: [...new Set(enhancedSessions.map(s => s.day))],
-        teacher_resolution: {
-          first_session_teacher: enhancedSessions[0]?.teacherName,
-          teacher_fields_available: Object.keys(enhancedSessions[0] || {}).filter(k => k.includes('teacher'))
-        }
-      }
+      message: `Lab schedule with ${enhancedSessions.length} sessions`
     };
     
     res.json(formattedResponse);
@@ -142,73 +131,104 @@ router.get('/lab-schedule/latest', async (req, res) => {
   }
 });
 
-// COMPLETELY FIXED Generate complete timetable with lab requirement check
-// ❗️ REPLACE your existing /generate-timetable route with this one.
-
+// ✅ FIXED: Generate complete timetable with proper structure
 router.post('/generate-timetable', async (req, res) => {
-    try {
-        const { includedYears, includeBE } = req.body;
-        console.log('Generating timetable with restrictions and labs...', includedYears, includeBE);
-
-        // (No changes to the code that gets divisions, restrictions, and time slots)
-        const divisions = await Division.find({ academicYear: { $in: includedYears } });
-        const allRestrictions = await TimetableRestriction.find({
-            isActive: true,
-            $or: [{ scope: 'global' }, { scope: 'year-specific' }]
-        }).sort({ scope: 1, createdAt: 1 });
-        const TimeSlotConfiguration = require('../models/TimeSlotConfiguration');
-        const timeConfig = await TimeSlotConfiguration.findOne();
-        if (!timeConfig || !timeConfig.timeSlots) {
-            return res.status(400).json({ error: 'Time slots not configured' });
-        }
-
-        console.log('🔬 Starting lab scheduling integration...');
-        
-        let labResult = null; // ✅ Define labResult here
-        try {
-            labResult = await runLabScheduler();
-            
-            if (!labResult.success && labResult.error === 'INSUFFICIENT_LAB_CAPACITY') {
-                console.log('❌ Lab scheduling failed: Insufficient lab capacity');
-                return res.status(400).json({
-                    success: false,
-                    error: 'INSUFFICIENT_LAB_CAPACITY',
-                    labRequirementError: labResult.labRequirementError
-                });
-            }
-
-            console.log('✅ Lab scheduling completed successfully');
-            console.log(`📊 Scheduled ${labResult.schedule_matrix?.length || 0} lab sessions`);
-
-        } catch (labError) {
-            console.warn('⚠️ Lab scheduling failed:', labError.message);
-        }
-
-        const timetableStructure = generateTimetableWithRestrictions(
-            divisions, allRestrictions, timeConfig.timeSlots, includedYears
-        );
-
-        // ✅ FINAL FIX: Include the entire labResult in the response
-        res.json({
-            success: true,
-            timetable: timetableStructure,
-            labScheduleResult: labResult, // <-- THIS IS THE CRITICAL ADDITION
-            divisionsCount: divisions.length,
-            restrictionsApplied: allRestrictions.length,
-            generatedAt: new Date().toISOString(),
-            debug: { /* ... debug info ... */ }
-        });
-
-    } catch (error) {
-        console.error("Error generating timetable:", error);
-        res.status(500).json({ 
-            error: "Failed to generate timetable",
-            details: error.message
-        });
+  try {
+    const { years, includeFourthYear } = req.body;
+    
+    console.log('🎯 Starting Timetable Generation...');
+    
+    // Determine academic years
+    let academicYears = ['SE', 'TE'];
+    if (includeFourthYear) {
+      academicYears.push('BE');
     }
+    
+    // Fetch divisions
+    const divisions = await Division.find({
+      academicYear: { $in: academicYears }
+    }).populate('syllabusId');
+    
+    if (divisions.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'No divisions found for selected years'
+      });
+    }
+    
+    // ✅ ADDED: Fetch time slots and restrictions
+    const timeSlotConfig = await TimeSlotConfiguration.findOne({});
+    if (!timeSlotConfig || !timeSlotConfig.timeSlots) {
+      return res.status(400).json({
+        success: false,
+        error: 'Time slot configuration not found. Please configure time slots first.'
+      });
+    }
+    
+    const restrictions = await TimetableRestriction.find({ isActive: true });
+    
+    console.log(`📊 Found ${restrictions.length} active restrictions`);
+    console.log(`🕐 Found ${timeSlotConfig.timeSlots.length} time slots`);
+    
+    // ✅ FIXED: Generate proper timetable structure with restrictions
+    const timetableStructure = generateTimetableWithRestrictions(
+      divisions,
+      restrictions,
+      timeSlotConfig.timeSlots,
+      academicYears
+    );
+    
+    // Generate unique schedule ID
+    const scheduleId = new mongoose.Types.ObjectId();
+    
+    // STEP 1: Run LAB Scheduling
+    console.log('🔬 STEP 1: Running Lab Scheduling...');
+    const labScheduleResult = await runLabScheduler({
+      academicYears,
+      divisions,
+      scheduleId
+    });
+    
+    console.log('✅ Lab Scheduling Completed');
+    
+    // STEP 2: Run LECTURE Scheduling (AFTER labs)
+    console.log('🎓 STEP 2: Running Lecture Scheduling...');
+    const lectureScheduleResult = await runLectureScheduler({
+      academicYears,
+      divisions,
+      scheduleId
+    });
+    
+    console.log('✅ Lecture Scheduling Completed');
+    
+    // Return combined results
+    res.json({
+      success: true,
+      message: 'Timetable generated successfully with labs and lectures',
+      timetable: timetableStructure, // ✅ Now includes proper day/division/slot structure
+      labScheduleResult,
+      lectureScheduleResult,
+      metadata: {
+        scheduleId,
+        academicYears,
+        divisionsCount: divisions.length,
+        restrictionsApplied: restrictions.length,
+        labSessions: labScheduleResult.scheduledLabs?.length || 0,
+        lectureSessions: lectureScheduleResult.scheduledLectures?.length || 0,
+        totalSessions: (labScheduleResult.scheduledLabs?.length || 0) + (lectureScheduleResult.scheduledLectures?.length || 0)
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Timetable Generation Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
 });
 
-// Helper function to generate timetable with restrictions
+// ✅ Helper function to generate timetable with restrictions
 function generateTimetableWithRestrictions(divisions, restrictions, timeSlots, includedYears) {
   const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const timetable = {};
@@ -216,11 +236,11 @@ function generateTimetableWithRestrictions(divisions, restrictions, timeSlots, i
   console.log('🏗️ Initializing empty timetable structure...');
   console.log('Divisions:', divisions.map(d => `${d.name} (${d.academicYear})`));
 
-  // Initialize empty timetable
+  // ✅ Initialize empty timetable with DIVISION NAMES as keys
   days.forEach(day => {
     timetable[day] = {};
     divisions.forEach(division => {
-      timetable[day][division.name] = {};
+      timetable[day][division.name] = {}; // ✅ Use division.name (e.g., "SE-A", "TE-B")
       timeSlots.forEach(slot => {
         timetable[day][division.name][slot.slotNumber] = {
           activity: null,

@@ -22,24 +22,20 @@ const Generator = () => {
 
   const [generatedTimetable, setGeneratedTimetable] = useState(null);
   const [labScheduleData, setLabScheduleData] = useState(null);
+  const [lectureScheduleData, setLectureScheduleData] = useState(null);
   const [canGenerate, setCanGenerate] = useState(false);
-  
-  // ✅ NEW: Add state for lab requirement error
   const [labRequirementError, setLabRequirementError] = useState(null);
 
-  // ✅ Fetch all required data on component mount
   useEffect(() => {
     fetchInitialData();
   }, []);
 
-  // ✅ Check if generation is possible
   useEffect(() => {
     const hasSeAndTe = config.divisions.SE.length > 0 && config.divisions.TE.length > 0;
     const hasSlots = config.slots.length > 0;
     setCanGenerate(hasSeAndTe && hasSlots);
   }, [config.divisions, config.slots]);
 
-  // ✅ Generate divisions based on numberOfDivisions
   const generateDivisions = (numberOfDivisions, yearPrefix) => {
     const divisions = [];
     const divisionLetters = ['A', 'B', 'C', 'D', 'E', 'F'];
@@ -51,7 +47,6 @@ const Generator = () => {
     return divisions;
   };
 
-  // ✅ NEW: Fetch restrictions data
   const fetchRestrictions = async () => {
     try {
       console.log('Fetching restrictions for timetable generation...');
@@ -69,18 +64,15 @@ const Generator = () => {
     }
   };
 
-  // ✅ UPDATED: Fetch all data including restrictions
   const fetchInitialData = async () => {
     setConfig(prev => ({ ...prev, loading: true, error: '' }));
     
     try {
-      // Get time slots and restrictions
       const [slotsResponse, restrictions] = await Promise.all([
         axios.get('http://localhost:5000/api/resources/timeslots'),
         fetchRestrictions()
       ]);
       
-      // Get divisions for each year
       let seDivisions = [];
       let teDivisions = [];
       let beDivisions = [];
@@ -112,7 +104,6 @@ const Generator = () => {
         console.log('BE syllabus not configured yet');
       }
 
-      // Handle slots data
       let slotsData = [];
       if (slotsResponse.data) {
         if (slotsResponse.data.timeSlots) {
@@ -155,7 +146,6 @@ const Generator = () => {
     }
   };
 
-  // ✅ Handle BE checkbox change
   const handleBEToggle = (e) => {
     setConfig(prev => ({
       ...prev,
@@ -163,15 +153,14 @@ const Generator = () => {
     }));
   };
 
-  // ✅ COMPLETELY UPDATED: Generate timetable with lab requirement error handling
   const generateTimetable = async () => {
     setConfig(prev => ({ ...prev, loading: true, error: '', success: '' }));
-    setLabRequirementError(null); // Clear previous lab errors
-    setGeneratedTimetable(null); // Clear previous timetable
-    setLabScheduleData(null); // Clear previous lab data
+    setLabRequirementError(null);
+    setGeneratedTimetable(null);
+    setLabScheduleData(null);
+    setLectureScheduleData(null);
 
     try {
-      // Build included years
       let includedYears = ['SE', 'TE'];
       if (config.includeBE && config.divisions.BE.length > 0) {
         includedYears.push('BE');
@@ -179,59 +168,37 @@ const Generator = () => {
 
       console.log('Generating timetable for years:', includedYears);
 
-      // ✅ Call the enhanced timetable generation API (includes lab requirement check)
       const response = await axios.post('http://localhost:5000/api/generator/generate-timetable', {
-        includedYears: includedYears,
-        includeBE: config.includeBE
+        years: includedYears,
+        includeFourthYear: config.includeBE
       });
 
       const result = response.data;
+      console.log('📊 Full timetable result:', result);
 
-      // ✅ Handle lab requirement error BEFORE displaying timetable
-      if (!response.status === 200 && result.error === 'INSUFFICIENT_LAB_CAPACITY') {
-        // Show lab requirement error to user - STOP HERE
-        setLabRequirementError({
-          type: 'LAB_CAPACITY_ERROR',
-          title: 'Additional Labs Required',
-          message: result.labRequirementError.message,
-          details: `Current Labs: ${result.labRequirementError.currentLabs}, Required: ${result.labRequirementError.minimumRequired}`,
-          recommendation: result.labRequirementError.recommendation,
-          additionalLabsNeeded: result.labRequirementError.additionalLabsNeeded,
-          currentLabs: result.labRequirementError.currentLabs,
-          minimumRequired: result.labRequirementError.minimumRequired
-        });
-        
-        // Don't display timetable - user needs to fix lab capacity first
-        setGeneratedTimetable(null);
-        setLabScheduleData(null);
-        
-        setConfig(prev => ({
-          ...prev,
-          loading: false,
-          error: '', // Don't show generic error - we have specific lab error
-          success: ''
-        }));
-        
-        return; // STOP processing here
-      }
-
-      // ✅ Normal success case - only reached if labs are sufficient
       if (result.success) {
         setGeneratedTimetable(result.timetable);
         
-        // NEW: Set lab schedule data
-        if (result.lab_schedule) {
-          setLabScheduleData(result.lab_schedule);
-          console.log('🔬 Lab schedule received:', result.lab_schedule.metrics);
+        if (result.labScheduleResult) {
+          setLabScheduleData(result.labScheduleResult);
+          console.log('🔬 Lab schedule received:', result.labScheduleResult);
         }
         
-        // Enhanced success message
-        let successMessage = `Timetable generated successfully! Applied ${result.restrictionsApplied} restrictions across ${result.divisionsCount} divisions.`;
+        if (result.lectureScheduleResult) {
+          setLectureScheduleData(result.lectureScheduleResult);
+          console.log('🎓 Lecture schedule received:', result.lectureScheduleResult);
+        }
         
-        if (result.lab_schedule?.success) {
-          successMessage += ` 🔬 Lab scheduling: ${result.lab_schedule.metrics.total_sessions_scheduled} sessions scheduled.`;
-        } else if (result.lab_schedule?.error) {
-          successMessage += ` ⚠️ Lab scheduling had issues: ${result.lab_schedule.error}`;
+        let successMessage = `Timetable generated successfully!`;
+        
+        if (result.labScheduleResult?.success) {
+          const labCount = result.labScheduleResult.scheduledLabs?.length || 0;
+          successMessage += ` 🔬 ${labCount} lab sessions scheduled.`;
+        }
+        
+        if (result.lectureScheduleResult?.success) {
+          const lectureCount = result.lectureScheduleResult.scheduledLectures?.length || 0;
+          successMessage += ` 🎓 ${lectureCount} lecture sessions scheduled.`;
         }
 
         setConfig(prev => ({
@@ -241,46 +208,21 @@ const Generator = () => {
           error: ''
         }));
       } else {
-        throw new Error('Timetable generation failed');
+        throw new Error(result.message || 'Timetable generation failed');
       }
 
     } catch (error) {
       console.error('Error generating timetable:', error);
       
-      // ✅ Handle different types of errors
-      if (error.response?.status === 400 && error.response?.data?.error === 'INSUFFICIENT_LAB_CAPACITY') {
-        // Lab capacity error from server
-        const labError = error.response.data.labRequirementError;
-        setLabRequirementError({
-          type: 'LAB_CAPACITY_ERROR',
-          title: 'Additional Labs Required',
-          message: labError.message,
-          details: `Current Labs: ${labError.currentLabs}, Required: ${labError.minimumRequired}`,
-          recommendation: labError.recommendation,
-          additionalLabsNeeded: labError.additionalLabsNeeded,
-          currentLabs: labError.currentLabs,
-          minimumRequired: labError.minimumRequired
-        });
-        
-        setConfig(prev => ({
-          ...prev,
-          loading: false,
-          error: '', // Don't show generic error
-          success: ''
-        }));
-      } else {
-        // Generic error
-        setConfig(prev => ({
-          ...prev,
-          error: error.response?.data?.error || 'Failed to generate timetable structure.',
-          loading: false,
-          success: ''
-        }));
-      }
+      setConfig(prev => ({
+        ...prev,
+        error: error.response?.data?.error || error.message || 'Failed to generate timetable structure.',
+        loading: false,
+        success: ''
+      }));
     }
   };
 
-  // ✅ Add refresh button to reload data
   const refreshData = () => {
     fetchInitialData();
   };
@@ -303,7 +245,7 @@ const Generator = () => {
         </p>
       </div>
 
-      {/* ✅ NEW: Lab Requirement Error Display */}
+      {/* Lab Requirement Error Display */}
       {labRequirementError && (
         <div style={{ 
           backgroundColor: '#fee2e2', 
@@ -408,7 +350,7 @@ const Generator = () => {
               color: 'white',
               border: 'none',
               borderRadius: '6px',
-              cursor: 'pointer'
+              cursor: config.loading ? 'not-allowed' : 'pointer'
             }}
           >
             {config.loading ? '🔄' : '↻ Refresh Data'}
@@ -422,7 +364,6 @@ const Generator = () => {
           </h3>
           
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-            {/* SE Info */}
             <div style={{ padding: '12px', backgroundColor: '#f8f9fa', borderRadius: '8px' }}>
               <div style={{ fontWeight: '600', color: '#2563eb', marginBottom: '4px' }}>
                 Second Year (SE) ✅ Mandatory
@@ -435,7 +376,6 @@ const Generator = () => {
               </div>
             </div>
 
-            {/* TE Info */}
             <div style={{ padding: '12px', backgroundColor: '#f8f9fa', borderRadius: '8px' }}>
               <div style={{ fontWeight: '600', color: '#2563eb', marginBottom: '4px' }}>
                 Third Year (TE) ✅ Mandatory
@@ -448,7 +388,6 @@ const Generator = () => {
               </div>
             </div>
 
-            {/* BE Info */}
             <div style={{ padding: '12px', backgroundColor: '#f8f9fa', borderRadius: '8px' }}>
               <div style={{ fontWeight: '600', color: '#7c2d12', marginBottom: '4px' }}>
                 Fourth Year (BE) ⚙️ Optional
@@ -476,14 +415,13 @@ const Generator = () => {
           </div>
         </div>
 
-        {/* NEW: Restrictions Info */}
+        {/* Restrictions Info */}
         <div style={{ marginBottom: '24px' }}>
           <h3 style={{ fontSize: '16px', marginBottom: '12px', color: '#555' }}>
             Configured Restrictions
           </h3>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px' }}>
             
-            {/* Global Restrictions */}
             <div style={{ padding: '12px', backgroundColor: '#fff3cd', borderRadius: '8px', border: '1px solid #ffeaa7' }}>
               <div style={{ fontWeight: '600', color: '#856404', marginBottom: '4px' }}>
                 🌐 Global Restrictions (Priority 1)
@@ -491,14 +429,8 @@ const Generator = () => {
               <div style={{ fontSize: '14px', color: '#6c757d' }}>
                 Count: {config.restrictions.global.length}
               </div>
-              {config.restrictions.global.length > 0 && (
-                <div style={{ fontSize: '12px', color: '#495057', marginTop: '4px' }}>
-                  {config.restrictions.global.map(r => r.activityName).join(', ')}
-                </div>
-              )}
             </div>
 
-            {/* Year-wise Restrictions */}
             <div style={{ padding: '12px', backgroundColor: '#d1ecf1', borderRadius: '8px', border: '1px solid #bee5eb' }}>
               <div style={{ fontWeight: '600', color: '#0c5460', marginBottom: '4px' }}>
                 🎓 Year-wise Restrictions (Priority 2)
@@ -506,11 +438,6 @@ const Generator = () => {
               <div style={{ fontSize: '14px', color: '#6c757d' }}>
                 Count: {config.restrictions.yearWise.length}
               </div>
-              {config.restrictions.yearWise.length > 0 && (
-                <div style={{ fontSize: '12px', color: '#495057', marginTop: '4px' }}>
-                  {config.restrictions.yearWise.map(r => `${r.activityName} (${r.academicYear})`).join(', ')}
-                </div>
-              )}
             </div>
           </div>
         </div>
@@ -526,11 +453,6 @@ const Generator = () => {
               Available: {config.slots.filter(slot => !slot.isBooked).length} | 
               Blocked: {config.slots.filter(slot => slot.isBooked).length}
             </div>
-            {config.slots.length === 0 && (
-              <div style={{ fontSize: '12px', color: '#dc2626', marginTop: '4px' }}>
-                No time slots configured. Please configure time slots in Restrictions tab.
-              </div>
-            )}
           </div>
         </div>
 
@@ -544,7 +466,7 @@ const Generator = () => {
             border: '1px solid #ccffcc'
           }}>
             <div style={{ fontWeight: '600', color: '#16a34a', marginBottom: '8px' }}>
-              Ready to Generate Timetable with Lab Integration
+              Ready to Generate Timetable with Lab & Lecture Integration
             </div>
             <div style={{ fontSize: '14px', color: '#166534' }}>
               Years: SE ({config.divisions.SE.length} divisions) + TE ({config.divisions.TE.length} divisions)
@@ -555,6 +477,8 @@ const Generator = () => {
               Restrictions: {config.restrictions.global.length} global + {config.restrictions.yearWise.length} year-wise
               <br />
               🔬 Lab Scheduling: Auto-enabled (assigns labs to batches simultaneously)
+              <br />
+              🎓 Lecture Scheduling: Auto-enabled (assigns lectures to divisions)
             </div>
           </div>
         )}
@@ -575,7 +499,7 @@ const Generator = () => {
             transition: 'all 0.2s'
           }}
         >
-          {config.loading ? '🔄 Generating...' : '🎯 Generate Timetable with Labs'}
+          {config.loading ? '🔄 Generating...' : '🎯 Generate Timetable with Labs & Lectures'}
         </button>
 
         {/* Help Text */}
@@ -594,21 +518,22 @@ const Generator = () => {
               <li>Configure time slots in Restrictions tab</li>
               <li>Add global and year-wise bookings as needed</li>
               <li>Assign teachers to subjects in Lecture and Lab tabs</li>
-              <li>Add sufficient LAB resources for lab scheduling</li>
+              <li>Add sufficient LAB and CR resources</li>
             </ul>
           </div>
         )}
       </div>
 
-      {/* Generated Timetable Display with Lab Integration */}
+      {/* ✅ FIXED: Timetable Display ONLY shows when data exists */}
       {generatedTimetable && !labRequirementError && (
         <div style={{ marginTop: '30px' }}>
           <h2 style={{ fontSize: '20px', marginBottom: '16px', color: '#333' }}>
-            Generated Timetable Structure with Lab Assignments
+            Generated Timetable Structure with Lab & Lecture Assignments
           </h2>
           <TimetableGrid 
             timetableData={generatedTimetable} 
-            labScheduleData={labScheduleData} 
+            labScheduleData={labScheduleData}
+            lectureScheduleData={lectureScheduleData}
           />
         </div>
       )}
