@@ -19,6 +19,7 @@ const restrictionsRoutes = require('./routes/restrictions');
 const timetableRoutes = require('./routes/timetable');
 const generatorRoutes = require('./routes/generator');
 const labSchedulerRoutes = require('./routes/labScheduler'); // NEW: Lab Scheduler routes
+const lectureSchedulerRoutes = require('./routes/lectureScheduler');
 
 // Route usage - Existing routes (unchanged)
 app.use('/api/teachers', teacherRoutes);
@@ -31,6 +32,7 @@ app.use('/api/navigation', navigationRoutes);
 app.use('/api/restrictions', restrictionsRoutes);
 app.use('/api/timetable', timetableRoutes);
 app.use('/api/generator', generatorRoutes);
+app.use('/api/lecture-schedule', lectureSchedulerRoutes);
 
 // NEW: Lab Scheduler API routes
 app.use('/api/lab-scheduler', labSchedulerRoutes);
