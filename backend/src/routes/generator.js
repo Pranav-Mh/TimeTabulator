@@ -131,7 +131,7 @@ router.get('/lab-schedule/latest', async (req, res) => {
   }
 });
 
-// ✅ FIXED: Generate complete timetable with resource validation
+// ✅ FIXED: Generate complete timetable with unified schedule_id
 router.post('/generate-timetable', async (req, res) => {
   try {
     const { years, includeFourthYear } = req.body;
@@ -156,7 +156,7 @@ router.post('/generate-timetable', async (req, res) => {
       });
     }
     
-    // ✅ ADDED: Fetch time slots and restrictions
+    // Fetch time slots and restrictions
     const timeSlotConfig = await TimeSlotConfiguration.findOne({});
     if (!timeSlotConfig || !timeSlotConfig.timeSlots) {
       return res.status(400).json({
@@ -170,7 +170,7 @@ router.post('/generate-timetable', async (req, res) => {
     console.log(`📊 Found ${restrictions.length} active restrictions`);
     console.log(`🕐 Found ${timeSlotConfig.timeSlots.length} time slots`);
     
-    // ✅ FIXED: Generate proper timetable structure with restrictions
+    // Generate proper timetable structure with restrictions
     const timetableStructure = generateTimetableWithRestrictions(
       divisions,
       restrictions,
@@ -178,18 +178,19 @@ router.post('/generate-timetable', async (req, res) => {
       academicYears
     );
     
-    // Generate unique schedule ID
+    // ✅ CREATE SINGLE UNIFIED SCHEDULE_ID FOR ENTIRE GENERATION
     const scheduleId = new mongoose.Types.ObjectId();
+    console.log(`📋 Created unified schedule_id for this generation: ${scheduleId}`);
     
-    // STEP 1: Run LAB Scheduling
+    // ✅ STEP 1: Run LAB Scheduling with unified scheduleId
     console.log('🔬 STEP 1: Running Lab Scheduling...');
     const labScheduleResult = await runLabScheduler({
       academicYears,
       divisions,
-      scheduleId
+      scheduleId: scheduleId  // ✅ Pass the unified ID
     });
     
-    // ✅ NEW: Check if lab scheduling failed due to insufficient labs
+    // Check if lab scheduling failed due to insufficient labs
     if (!labScheduleResult.success && labScheduleResult.error === 'INSUFFICIENT_LAB_CAPACITY') {
       console.log('❌ Lab scheduling blocked due to insufficient labs');
       return res.status(400).json({
@@ -202,15 +203,15 @@ router.post('/generate-timetable', async (req, res) => {
     
     console.log('✅ Lab Scheduling Completed');
     
-    // STEP 2: Run LECTURE Scheduling (AFTER labs)
+    // ✅ STEP 2: Run LECTURE Scheduling with SAME unified scheduleId
     console.log('🎓 STEP 2: Running Lecture Scheduling...');
     const lectureScheduleResult = await runLectureScheduler({
       academicYears,
       divisions,
-      scheduleId
+      scheduleId: scheduleId  // ✅ Use the SAME unified ID
     });
     
-    // ✅ NEW: Check if lecture scheduling failed due to insufficient classrooms
+    // Check if lecture scheduling failed due to insufficient classrooms
     if (!lectureScheduleResult.success && lectureScheduleResult.error === 'INSUFFICIENT_CLASSROOM_CAPACITY') {
       console.log('❌ Lecture scheduling blocked due to insufficient classrooms');
       return res.status(400).json({
@@ -231,7 +232,7 @@ router.post('/generate-timetable', async (req, res) => {
       labScheduleResult,
       lectureScheduleResult,
       metadata: {
-        scheduleId,
+        scheduleId: scheduleId,  // ✅ Return the unified schedule_id
         academicYears,
         divisionsCount: divisions.length,
         restrictionsApplied: restrictions.length,
@@ -250,7 +251,7 @@ router.post('/generate-timetable', async (req, res) => {
   }
 });
 
-// ✅ Helper function to generate timetable with restrictions
+// Helper function to generate timetable with restrictions
 function generateTimetableWithRestrictions(divisions, restrictions, timeSlots, includedYears) {
   const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const timetable = {};
@@ -258,7 +259,7 @@ function generateTimetableWithRestrictions(divisions, restrictions, timeSlots, i
   console.log('🏗️ Initializing empty timetable structure...');
   console.log('Divisions:', divisions.map(d => `${d.name} (${d.academicYear})`));
 
-  // ✅ Initialize empty timetable with DIVISION NAMES as keys
+  // Initialize empty timetable with DIVISION NAMES as keys
   days.forEach(day => {
     timetable[day] = {};
     divisions.forEach(division => {
@@ -431,5 +432,13 @@ router.get('/status', async (req, res) => {
     res.status(500).json({ error: 'Failed to check status' });
   }
 });
+
+// Saved timetable routes
+const savedTimetableController = require('../controllers/savedTimetableController');
+
+router.post('/save-timetable', savedTimetableController.saveTimetable);
+router.get('/saved-timetables', savedTimetableController.getAllSavedTimetables);
+router.get('/saved-timetables/:id', savedTimetableController.getSavedTimetableById);
+router.delete('/saved-timetables/:id', savedTimetableController.deleteSavedTimetable);
 
 module.exports = router;
