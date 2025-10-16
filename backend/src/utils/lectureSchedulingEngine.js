@@ -9,7 +9,6 @@ const TimeSlotConfiguration = require('../models/TimeSlotConfiguration');
 const TimetableRestriction = require('../models/TimetableRestriction');
 const mongoose = require('mongoose');
 
-
 class LectureSchedulingEngine {
   constructor() {
     this.scheduleMatrix = [];
@@ -25,7 +24,7 @@ class LectureSchedulingEngine {
     this.dayRotationIndex = 0;
   }
 
-  // ✅ NEW: Calculate minimum classrooms required
+  // ✅ Calculate minimum classrooms required
   async calculateMinimumClassroomsRequired(inputData) {
     console.log('🏫 ===== MINIMUM CLASSROOM REQUIREMENT ANALYSIS =====');
     
@@ -37,7 +36,6 @@ class LectureSchedulingEngine {
     console.log(`   Total Divisions: ${totalDivisions}`);
     console.log(`   Current Classrooms Available: ${currentClassroomCount}`);
     
-    // Minimum classrooms = number of divisions (each division needs a classroom simultaneously)
     const minimumClassroomsRequired = totalDivisions;
     const additionalClassroomsNeeded = Math.max(0, minimumClassroomsRequired - currentClassroomCount);
     
@@ -86,10 +84,10 @@ class LectureSchedulingEngine {
         throw new Error('Time slot configuration not found');
       }
 
-      // ✅ NEW: Calculate minimum classroom requirement BEFORE scheduling
+      // Calculate minimum classroom requirement BEFORE scheduling
       const classroomRequirement = await this.calculateMinimumClassroomsRequired(inputData);
       
-      // ✅ NEW: BLOCK scheduling if insufficient classrooms
+      // BLOCK scheduling if insufficient classrooms
       if (!classroomRequirement.sufficient) {
         console.log('❌ CRITICAL: Insufficient classroom capacity detected!');
         console.log(`Need ${classroomRequirement.additionalClassroomsNeeded} more classrooms`);
@@ -113,23 +111,18 @@ class LectureSchedulingEngine {
       console.log('✅ Classroom capacity is sufficient for all divisions.');
 
       const restrictions = await TimetableRestriction.find({ isActive: true });
-     
       await this.buildOETeacherBookings(academicYears, restrictions);
      
       console.log(`🔍 Fetching lab schedules with schedule_id: ${scheduleId}...`);
      
       let labSchedules = [];
-     
       try {
         labSchedules = await LabScheduleSession.find({ schedule_id: scheduleId }).lean();
-       
         if (!labSchedules || labSchedules.length === 0) {
           console.log('⚠️ No lab schedules found with schedule_id, fetching all recent sessions...');
           labSchedules = await LabScheduleSession.find().sort({ createdAt: -1 }).limit(200).lean();
         }
-       
         console.log(`✅ Found ${labSchedules.length} lab sessions to process`);
-       
       } catch (error) {
         console.error('❌ Error fetching lab schedules:', error);
         labSchedules = [];
@@ -138,25 +131,70 @@ class LectureSchedulingEngine {
       this.initializeAvailability(timeSlotConfig, labSchedules, restrictions);
      
       const lectureAssignments = await this.fetchLectureAssignments(academicYears);
-     
       const classrooms = await Resource.find({ type: 'CR', isActive: true });
      
       console.log(`📚 Found ${classrooms.length} classrooms available for lectures`);
      
+      // ✅ FIRST PASS: Schedule with strict rule (1 lecture per subject per day)
+      console.log('\n🎯 ===== FIRST PASS: Strict Scheduling (1 lecture/subject/day) =====\n');
+      
       for (const year of academicYears) {
         const yearDivisions = divisions.filter(d => d.academicYear === year);
-       
         for (const division of yearDivisions) {
           await this.scheduleDivisionLectures(
             division,
             lectureAssignments,
             classrooms,
             timeSlotConfig,
-            scheduleId
+            scheduleId,
+            true  // ✅ strictMode = true (enforce 1 lecture/subject/day)
           );
         }
       }
-     
+      
+      const firstPassScheduled = this.debugLog.scheduledLectures.length;
+      const firstPassUnscheduled = this.debugLog.unscheduledLectures.length;
+      
+      console.log(`\n📊 First Pass Results: ${firstPassScheduled} scheduled, ${firstPassUnscheduled} unscheduled\n`);
+      
+      // ✅ SECOND PASS: Relax rule for remaining unscheduled lectures
+      if (this.debugLog.unscheduledLectures.length > 0) {
+        console.log('🔄 ===== SECOND PASS: Relaxed Scheduling (allow multiple/day) =====\n');
+        console.log(`🎯 Attempting to schedule ${this.debugLog.unscheduledLectures.length} remaining lectures...\n`);
+        
+        // Store unscheduled lectures for second pass
+        const remainingLectures = [...this.debugLog.unscheduledLectures];
+        this.debugLog.unscheduledLectures = []; // Clear for second pass
+        
+        for (const unscheduled of remainingLectures) {
+          // Find the division and assignment
+          const division = divisions.find(d => d.name === unscheduled.division);
+          if (!division) continue;
+          
+          const assignment = lectureAssignments.find(a =>
+            a.divisionId && 
+            a.divisionId._id.toString() === division._id.toString() &&
+            a.subjectId && 
+            a.subjectId.name === unscheduled.subject
+          );
+          
+          if (!assignment) continue;
+          
+          // Attempt to schedule remaining hours with relaxed rules
+          await this.scheduleRemainingLectures(
+            division,
+            assignment,
+            classrooms,
+            timeSlotConfig,
+            scheduleId,
+            unscheduled.hoursRemaining
+          );
+        }
+        
+        const secondPassScheduled = this.debugLog.scheduledLectures.length - firstPassScheduled;
+        console.log(`\n📊 Second Pass Results: ${secondPassScheduled} additional lectures scheduled\n`);
+      }
+      
       if (this.debugLog.scheduledLectures.length > 0) {
         await LectureScheduleSession.insertMany(this.debugLog.scheduledLectures);
         console.log(`💾 Saved ${this.debugLog.scheduledLectures.length} lecture sessions to database`);
@@ -184,9 +222,65 @@ class LectureSchedulingEngine {
     }
   }
 
+  // ✅ NEW: Schedule remaining lectures with relaxed rules
+  async scheduleRemainingLectures(division, assignment, classrooms, timeSlotConfig, scheduleId, hoursRemaining) {
+    const subject = assignment.subjectId;
+    const teacher = assignment.teacherId;
+    
+    console.log(`\n🔄 Second Pass: Scheduling ${subject.name} for ${division.name} - Need: ${hoursRemaining} hours (relaxed mode)`);
+    
+    const allDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+    const scheduledSlots = [];
+    let hoursScheduled = 0;
+    
+    // Try all days and all slots without the "1 per day" restriction
+    for (const day of allDays) {
+      if (hoursScheduled >= hoursRemaining) break;
+      
+      for (const slotConfig of timeSlotConfig.timeSlots) {
+        if (hoursScheduled >= hoursRemaining) break;
+        
+        const slotNumber = slotConfig.slotNumber;
+        
+        // ✅ Use relaxed availability check (no "1 per day" rule)
+        if (this.isSlotAvailableForLecture(
+          division,
+          day,
+          slotNumber,
+          teacher._id,
+          classrooms,
+          scheduledSlots,
+          false  // ✅ strictMode = false (allow multiple lectures per day)
+        )) {
+          const classroom = this.findAvailableClassroom(classrooms, day, slotNumber);
+          
+          if (classroom) {
+            this.scheduleOneLecture(division, day, slotNumber, subject, teacher, classroom, scheduleId, scheduledSlots);
+            hoursScheduled++;
+            console.log(`  ✅ ${day} Slot ${slotNumber} - Progress: ${hoursScheduled}/${hoursRemaining} (relaxed mode)`);
+          }
+        }
+      }
+    }
+    
+    if (hoursScheduled < hoursRemaining) {
+      this.debugLog.unscheduledLectures.push({
+        division: division.name,
+        subject: subject.name,
+        teacher: teacher.name,
+        hoursNeeded: hoursRemaining,
+        hoursScheduled: hoursScheduled,
+        hoursRemaining: hoursRemaining - hoursScheduled,
+        reason: 'Insufficient free slots even with relaxed constraints'
+      });
+      console.warn(`⚠️ STILL INCOMPLETE: ${subject.name} (${hoursScheduled}/${hoursRemaining} hours scheduled in second pass)`);
+    } else {
+      console.log(`✅ COMPLETE (Second Pass): ${subject.name} (${hoursScheduled}/${hoursRemaining} hours)`);
+    }
+  }
+
   async buildOETeacherBookings(academicYears, restrictions) {
     console.log('📚 Building OE teacher booking map...');
-   
     this.oeTeacherBookings = {};
    
     for (const year of academicYears) {
@@ -254,18 +348,15 @@ class LectureSchedulingEngine {
 
   initializeAvailability(timeSlotConfig, labSchedules, restrictions) {
     console.log('🔄 Initializing availability matrices...');
-   
     const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
    
     // Load global restrictions
     let globalCount = 0;
-   
     for (const restriction of restrictions) {
       if (restriction.scope === 'global') {
         const restrictedDays = restriction.days && restriction.days.length > 0
           ? restriction.days
           : days;
-       
         const restrictedSlots = restriction.timeSlots || [];
        
         console.log(`🌐 Loading global restriction: "${restriction.restrictionName}" on days [${restrictedDays.join(', ')}] slots [${restrictedSlots.join(', ')}]`);
@@ -275,14 +366,12 @@ class LectureSchedulingEngine {
             for (const slotNumber of restrictedSlots) {
               const key = `${day}-${slotNumber}`;
               this.globalRestrictions.add(key);
-             
               this.scheduleMatrix.push({
                 day: day,
                 slotNumber: slotNumber,
                 type: 'global-restriction',
                 reason: restriction.restrictionName
               });
-             
               globalCount++;
             }
           }
@@ -300,7 +389,6 @@ class LectureSchedulingEngine {
         const restrictedDays = restriction.days && restriction.days.length > 0
           ? restriction.days
           : days;
-       
         const restrictedSlots = restriction.timeSlots || [];
         const affectedYears = restriction.affectedYears || [];
        
@@ -358,12 +446,10 @@ class LectureSchedulingEngine {
          
           const teacherKey = `${teacherId}-${day}-${slot}`;
           this.teacherAvailability.set(teacherKey, `busy-lab-${subject}`);
-         
           blockedCount++;
         }
        
         teachersBlocked.add(teacherId.toString());
-       
       } catch (error) {
         console.error('❌ Error processing lab session:', error, labSession);
         continue;
@@ -391,12 +477,12 @@ class LectureSchedulingEngine {
     );
    
     console.log(`✅ Fetched ${filteredAssignments.length} lecture assignments (TH + VAP)`);
-   
     return filteredAssignments;
   }
 
-  async scheduleDivisionLectures(division, lectureAssignments, classrooms, timeSlotConfig, scheduleId) {
-    console.log(`\n📅 ========== Scheduling lectures for ${division.name} ==========`);
+  // ✅ UPDATED: Added strictMode parameter
+  async scheduleDivisionLectures(division, lectureAssignments, classrooms, timeSlotConfig, scheduleId, strictMode = true) {
+    console.log(`\n📅 ========== Scheduling lectures for ${division.name} (${strictMode ? 'STRICT' : 'RELAXED'} mode) ==========`);
    
     const divisionAssignments = lectureAssignments.filter(a =>
       a.divisionId && a.divisionId._id.toString() === division._id.toString()
@@ -408,7 +494,6 @@ class LectureSchedulingEngine {
       return 0;
     });
    
-    // ✅ CRITICAL FIX: Use only Monday-Friday for lectures
     const allDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
    
     for (const assignment of divisionAssignments) {
@@ -433,13 +518,15 @@ class LectureSchedulingEngine {
          
           const slotNumber = slotConfig.slotNumber;
          
+          // ✅ Pass strictMode to availability check
           if (this.isSlotAvailableForLecture(
             division,
             day,
             slotNumber,
             teacher._id,
             classrooms,
-            scheduledSlots
+            scheduledSlots,
+            strictMode  // ✅ Pass strict mode flag
           )) {
             const classroom = this.findAvailableClassroom(classrooms, day, slotNumber);
            
@@ -463,7 +550,9 @@ class LectureSchedulingEngine {
           hoursNeeded: hoursNeeded,
           hoursScheduled: hoursScheduled,
           hoursRemaining: hoursNeeded - hoursScheduled,
-          reason: 'Insufficient free slots after checking restrictions and Monday-Friday limit'
+          reason: strictMode 
+            ? 'Insufficient free slots with 1-lecture-per-day constraint' 
+            : 'Insufficient free slots even with relaxed constraints'
         });
        
         console.warn(`⚠️ INCOMPLETE: ${subject.name} (${hoursScheduled}/${hoursNeeded} hours)`);
@@ -499,7 +588,8 @@ class LectureSchedulingEngine {
     scheduledSlots.push({ day, slotNumber });
   }
 
-  isSlotAvailableForLecture(division, day, slotNumber, teacherId, classrooms, scheduledSlots) {
+  // ✅ UPDATED: Added strictMode parameter
+  isSlotAvailableForLecture(division, day, slotNumber, teacherId, classrooms, scheduledSlots, strictMode = true) {
     const slotKey = `${day}-${slotNumber}`;
    
     // 1. Check global restrictions
@@ -532,9 +622,11 @@ class LectureSchedulingEngine {
       return false;
     }
    
-    // 6. Avoid scheduling same subject more than once per day
-    const sameDay = scheduledSlots.filter(s => s.day === day);
-    if (sameDay.length >= 1) return false;
+    // ✅ 6. CONDITIONAL: Apply 1-lecture-per-day rule only in strict mode
+    if (strictMode) {
+      const sameDay = scheduledSlots.filter(s => s.day === day);
+      if (sameDay.length >= 1) return false;
+    }
    
     return true;
   }
@@ -547,7 +639,6 @@ class LectureSchedulingEngine {
         return classroom;
       }
     }
-   
     return null;
   }
 
@@ -591,6 +682,5 @@ class LectureSchedulingEngine {
     };
   }
 }
-
 
 module.exports = LectureSchedulingEngine;
