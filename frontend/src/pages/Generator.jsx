@@ -18,9 +18,16 @@ const Generator = () => {
   const [lectureScheduleData, setLectureScheduleData] = useState(null);
   const [canGenerate, setCanGenerate] = useState(false);
   
-  // ✅ NEW: Resource requirement error states
+  // Resource requirement error states
   const [labRequirementError, setLabRequirementError] = useState(null);
   const [classroomRequirementError, setClassroomRequirementError] = useState(null);
+
+  // ✅ NEW: Save timetable states
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [timetableName, setTimetableName] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const [saveSuccess, setSaveSuccess] = useState('');
+  const [currentScheduleId, setCurrentScheduleId] = useState(null);
 
   useEffect(() => {
     fetchInitialData();
@@ -139,16 +146,17 @@ const Generator = () => {
     setConfig(prev => ({ ...prev, includeBE: e.target.checked }));
   };
 
-  // ✅ UPDATED: Generate timetable with resource error handling
   const generateTimetable = async () => {
     setConfig(prev => ({ ...prev, loading: true, error: '', success: '' }));
     
-    // ✅ Clear previous errors
+    // Clear previous errors and data
     setLabRequirementError(null);
     setClassroomRequirementError(null);
     setGeneratedTimetable(null);
     setLabScheduleData(null);
     setLectureScheduleData(null);
+    setCurrentScheduleId(null);
+    setShowSaveDialog(false);
 
     try {
       let includedYears = ['SE', 'TE'];
@@ -179,6 +187,11 @@ const Generator = () => {
           console.log('Lecture schedule received:', result.lectureScheduleResult);
         }
 
+        // ✅ Store schedule ID for saving
+        if (result.metadata?.scheduleId) {
+          setCurrentScheduleId(result.metadata.scheduleId);
+        }
+
         let successMessage = 'Timetable generated successfully! ';
         if (result.labScheduleResult?.success) {
           const labCount = result.labScheduleResult.scheduledLabs?.length || 0;
@@ -202,7 +215,7 @@ const Generator = () => {
     } catch (error) {
       console.error('Error generating timetable:', error);
       
-      // ✅ NEW: Handle resource requirement errors
+      // Handle resource requirement errors
       if (error.response?.data?.error === 'INSUFFICIENT_LAB_CAPACITY') {
         const labError = error.response.data.labRequirementError;
         setLabRequirementError({
@@ -214,6 +227,7 @@ const Generator = () => {
           minimumRequired: labError.minimumRequired,
           additionalLabsNeeded: labError.additionalLabsNeeded
         });
+        setConfig(prev => ({ ...prev, loading: false }));
       } else if (error.response?.data?.error === 'INSUFFICIENT_CLASSROOM_CAPACITY') {
         const classroomError = error.response.data.classroomRequirementError;
         setClassroomRequirementError({
@@ -225,6 +239,7 @@ const Generator = () => {
           minimumRequired: classroomError.minimumRequired,
           additionalClassroomsNeeded: classroomError.additionalClassroomsNeeded
         });
+        setConfig(prev => ({ ...prev, loading: false }));
       } else {
         setConfig(prev => ({
           ...prev,
@@ -233,6 +248,56 @@ const Generator = () => {
           success: ''
         }));
       }
+    }
+  };
+
+  // ✅ NEW: Handle save timetable
+  const handleSaveTimetable = async () => {
+    if (!timetableName.trim()) {
+      setSaveError('Please enter a timetable name');
+      return;
+    }
+    
+    if (!currentScheduleId) {
+      setSaveError('No schedule ID available. Please generate timetable first.');
+      return;
+    }
+    
+    try {
+      const response = await axios.post('http://localhost:5000/api/generator/save-timetable', {
+        name: timetableName.trim(),
+        schedule_id: currentScheduleId,
+        academicYears: config.includeBE ? ['SE', 'TE', 'BE'] : ['SE', 'TE'],
+        divisions: [
+          ...config.divisions.SE.map(d => `SE-${d}`),
+          ...config.divisions.TE.map(d => `TE-${d}`),
+          ...(config.includeBE ? config.divisions.BE.map(d => `BE-${d}`) : [])
+        ],
+        metadata: {
+          labSessions: labScheduleData?.scheduledLabs?.length || 0,
+          lectureSessions: lectureScheduleData?.scheduledLectures?.length || 0,
+          totalSessions: (labScheduleData?.scheduledLabs?.length || 0) + (lectureScheduleData?.scheduledLectures?.length || 0),
+          restrictionsApplied: config.restrictions.global.length + config.restrictions.yearWise.length,
+          divisionsCount: config.divisions.SE.length + config.divisions.TE.length + (config.includeBE ? config.divisions.BE.length : 0)
+        },
+        statistics: {
+          labUtilization: labScheduleData?.statistics?.utilizationRate || 'N/A',
+          lectureUtilization: lectureScheduleData?.statistics?.utilizationRate || 'N/A',
+          unscheduledLectures: lectureScheduleData?.unscheduledLectures?.length || 0,
+          unscheduledLabs: labScheduleData?.unscheduledLabs?.length || 0
+        }
+      });
+      
+      if (response.data.success) {
+        setSaveSuccess(`Timetable "${timetableName}" saved successfully!`);
+        setTimetableName('');
+        setTimeout(() => {
+          setSaveSuccess('');
+          setShowSaveDialog(false);
+        }, 2000);
+      }
+    } catch (error) {
+      setSaveError(error.response?.data?.error || 'Failed to save timetable');
     }
   };
 
@@ -252,7 +317,7 @@ const Generator = () => {
         </p>
       </div>
 
-      {/* ✅ NEW: Lab Requirement Error Display */}
+      {/* Lab Requirement Error Display */}
       {labRequirementError && (
         <div style={{
           backgroundColor: '#fee2e2',
@@ -321,7 +386,7 @@ const Generator = () => {
         </div>
       )}
 
-      {/* ✅ NEW: Classroom Requirement Error Display */}
+      {/* Classroom Requirement Error Display */}
       {classroomRequirementError && (
         <div style={{
           backgroundColor: '#fef3c7',
@@ -616,7 +681,7 @@ const Generator = () => {
         )}
       </div>
 
-      {/* ✅ FIXED: Timetable Display ONLY shows when data exists */}
+      {/* Timetable Display */}
       {generatedTimetable && !labRequirementError && !classroomRequirementError && (
         <div style={{ marginTop: '30px' }}>
           <h2 style={{ fontSize: '20px', marginBottom: '16px', color: '#333' }}>
@@ -627,6 +692,136 @@ const Generator = () => {
             labScheduleData={labScheduleData}
             lectureScheduleData={lectureScheduleData}
           />
+        </div>
+      )}
+
+      {/* ✅ NEW: Save Timetable Section */}
+      {generatedTimetable && currentScheduleId && !labRequirementError && !classroomRequirementError && (
+        <div style={{ marginTop: '30px', padding: '24px', backgroundColor: '#f8f9fa', borderRadius: '12px', textAlign: 'center' }}>
+          <h3 style={{ marginBottom: '16px', color: '#333' }}>💾 Save This Timetable</h3>
+          
+          {!showSaveDialog ? (
+            <button
+              onClick={() => setShowSaveDialog(true)}
+              style={{
+                padding: '12px 24px',
+                fontSize: '16px',
+                fontWeight: 600,
+                backgroundColor: '#28a745',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              💾 Save Timetable
+            </button>
+          ) : (
+            <div style={{
+              maxWidth: '500px',
+              margin: '0 auto',
+              padding: '24px',
+              backgroundColor: 'white',
+              borderRadius: '12px',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+            }}>
+              <h4 style={{ marginBottom: '16px', color: '#333' }}>Name Your Timetable</h4>
+              
+              {saveError && (
+                <div style={{
+                  color: '#d32f2f',
+                  backgroundColor: '#ffebee',
+                  padding: '12px',
+                  borderRadius: '6px',
+                  marginBottom: '16px',
+                  border: '1px solid #f44336'
+                }}>
+                  {saveError}
+                </div>
+              )}
+              
+              {saveSuccess && (
+                <div style={{
+                  color: '#2e7d32',
+                  backgroundColor: '#e8f5e9',
+                  padding: '12px',
+                  borderRadius: '6px',
+                  marginBottom: '16px',
+                  border: '1px solid #4caf50'
+                }}>
+                  {saveSuccess}
+                </div>
+              )}
+              
+              <input
+                type="text"
+                value={timetableName}
+                onChange={(e) => {
+                  setTimetableName(e.target.value);
+                  setSaveError('');
+                }}
+                placeholder="e.g., Fall 2025 Final Schedule"
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  fontSize: '16px',
+                  border: '2px solid #ddd',
+                  borderRadius: '6px',
+                  marginBottom: '16px',
+                  boxSizing: 'border-box'
+                }}
+                maxLength={50}
+              />
+              
+              <div style={{ fontSize: '12px', color: '#666', marginBottom: '16px', textAlign: 'left' }}>
+                <strong>Generated on:</strong> {new Date().toLocaleString()}
+                <br />
+                <strong>Sessions:</strong> {(labScheduleData?.scheduledLabs?.length || 0) + (lectureScheduleData?.scheduledLectures?.length || 0)} total
+                <br />
+                <strong>Divisions:</strong> {config.divisions.SE.length + config.divisions.TE.length + (config.includeBE ? config.divisions.BE.length : 0)}
+              </div>
+              
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                <button
+                  onClick={handleSaveTimetable}
+                  disabled={!timetableName.trim()}
+                  style={{
+                    padding: '10px 20px',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    backgroundColor: timetableName.trim() ? '#28a745' : '#9ca3af',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: timetableName.trim() ? 'pointer' : 'not-allowed'
+                  }}
+                >
+                  ✓ Save
+                </button>
+                
+                <button
+                  onClick={() => {
+                    setShowSaveDialog(false);
+                    setTimetableName('');
+                    setSaveError('');
+                  }}
+                  style={{
+                    padding: '10px 20px',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    backgroundColor: '#6c757d',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

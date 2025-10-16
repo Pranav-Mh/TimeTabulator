@@ -18,10 +18,10 @@ const navigationRoutes = require('./routes/navigation');
 const restrictionsRoutes = require('./routes/restrictions');
 const timetableRoutes = require('./routes/timetable');
 const generatorRoutes = require('./routes/generator');
-const labSchedulerRoutes = require('./routes/labScheduler'); // NEW: Lab Scheduler routes
+const labSchedulerRoutes = require('./routes/labScheduler');
 const lectureSchedulerRoutes = require('./routes/lectureScheduler');
 
-// Route usage - Existing routes (unchanged)
+// Route usage
 app.use('/api/teachers', teacherRoutes);
 app.use('/api/syllabus', syllabusRoutes);
 app.use('/api/lectures', lectureRoutes);
@@ -31,20 +31,19 @@ app.use('/api/resources', resourcesRoutes);
 app.use('/api/navigation', navigationRoutes);
 app.use('/api/restrictions', restrictionsRoutes);
 app.use('/api/timetable', timetableRoutes);
-app.use('/api/generator', generatorRoutes);
+app.use('/api/generator', generatorRoutes); // ✅ This includes saved timetable routes
 app.use('/api/lecture-schedule', lectureSchedulerRoutes);
-
-// NEW: Lab Scheduler API routes
 app.use('/api/lab-scheduler', labSchedulerRoutes);
 
-// Health check endpoint (optional but recommended)
+// Health check endpoint
 app.get('/health', (req, res) => {
   res.json({
     status: 'OK',
     timestamp: new Date().toISOString(),
     services: {
       timetable_generator: 'active',
-      lab_scheduler: 'active'
+      lab_scheduler: 'active',
+      saved_timetables: 'active'
     }
   });
 });
@@ -59,7 +58,8 @@ app.get('/', (req, res) => {
       'Lab Scheduling',
       'Teacher Management',
       'Resource Configuration',
-      'Restriction Management'
+      'Restriction Management',
+      'Saved Timetables'
     ],
     endpoints: {
       teachers: '/api/teachers',
@@ -72,6 +72,7 @@ app.get('/', (req, res) => {
       restrictions: '/api/restrictions',
       timetable: '/api/timetable',
       generator: '/api/generator',
+      'saved-timetables': '/api/generator/saved-timetables',
       'lab-scheduler': '/api/lab-scheduler'
     }
   });

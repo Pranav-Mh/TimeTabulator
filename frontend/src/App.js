@@ -6,6 +6,7 @@ import Sidebar from './components/Sidebar';
 
 import Dashboard from './pages/Dashboard';
 import Syllabus from './pages/Syllabus';
+import ViewSavedTimetable from './pages/ViewSavedTimetable';
 import Lecture from './pages/Lecture';
 import Teachers from './pages/Teachers';
 import ConfigureResources from './pages/ConfigureResources';
@@ -26,6 +27,7 @@ function App() {
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/syllabus" element={<Syllabus />} />
+            <Route path="/view-timetable/:id" element={<ViewSavedTimetable />} />
             <Route path="/teachers" element={<Teachers />} />
             <Route path="/lecture" element={<Lecture />} />
             <Route path="/lab" element={<Lab />} />
