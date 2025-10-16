@@ -94,13 +94,13 @@ router.get('/lab-schedule/latest', async (req, res) => {
     console.log(`✅ Found ${sessions.length} lab sessions for TimetableGrid display`);
     
     const enhancedSessions = sessions.map(session => {
-      const teacherName = session.teacherName || 
+      const teacherName = session.teacherName ||
                          session.teacher_name ||
                          session.teacher_id?.name ||
                          session.teacherDisplayId ||
                          session.teacher_display_id ||
                          `Teacher-${session.teacher_id?.teacherId || 'Unknown'}`;
-      
+
       return {
         ...session,
         teacherName: teacherName,
@@ -131,7 +131,7 @@ router.get('/lab-schedule/latest', async (req, res) => {
   }
 });
 
-// ✅ FIXED: Generate complete timetable with proper structure
+// ✅ FIXED: Generate complete timetable with resource validation
 router.post('/generate-timetable', async (req, res) => {
   try {
     const { years, includeFourthYear } = req.body;
@@ -143,7 +143,7 @@ router.post('/generate-timetable', async (req, res) => {
     if (includeFourthYear) {
       academicYears.push('BE');
     }
-    
+
     // Fetch divisions
     const divisions = await Division.find({
       academicYear: { $in: academicYears }
@@ -189,6 +189,17 @@ router.post('/generate-timetable', async (req, res) => {
       scheduleId
     });
     
+    // ✅ NEW: Check if lab scheduling failed due to insufficient labs
+    if (!labScheduleResult.success && labScheduleResult.error === 'INSUFFICIENT_LAB_CAPACITY') {
+      console.log('❌ Lab scheduling blocked due to insufficient labs');
+      return res.status(400).json({
+        success: false,
+        error: 'INSUFFICIENT_LAB_CAPACITY',
+        labRequirementError: labScheduleResult.labRequirementError,
+        message: labScheduleResult.labRequirementError.message
+      });
+    }
+    
     console.log('✅ Lab Scheduling Completed');
     
     // STEP 2: Run LECTURE Scheduling (AFTER labs)
@@ -199,13 +210,24 @@ router.post('/generate-timetable', async (req, res) => {
       scheduleId
     });
     
+    // ✅ NEW: Check if lecture scheduling failed due to insufficient classrooms
+    if (!lectureScheduleResult.success && lectureScheduleResult.error === 'INSUFFICIENT_CLASSROOM_CAPACITY') {
+      console.log('❌ Lecture scheduling blocked due to insufficient classrooms');
+      return res.status(400).json({
+        success: false,
+        error: 'INSUFFICIENT_CLASSROOM_CAPACITY',
+        classroomRequirementError: lectureScheduleResult.classroomRequirementError,
+        message: lectureScheduleResult.classroomRequirementError.message
+      });
+    }
+    
     console.log('✅ Lecture Scheduling Completed');
     
     // Return combined results
     res.json({
       success: true,
       message: 'Timetable generated successfully with labs and lectures',
-      timetable: timetableStructure, // ✅ Now includes proper day/division/slot structure
+      timetable: timetableStructure,
       labScheduleResult,
       lectureScheduleResult,
       metadata: {
@@ -240,7 +262,7 @@ function generateTimetableWithRestrictions(divisions, restrictions, timeSlots, i
   days.forEach(day => {
     timetable[day] = {};
     divisions.forEach(division => {
-      timetable[day][division.name] = {}; // ✅ Use division.name (e.g., "SE-A", "TE-B")
+      timetable[day][division.name] = {};
       timeSlots.forEach(slot => {
         timetable[day][division.name][slot.slotNumber] = {
           activity: null,
@@ -293,7 +315,7 @@ function generateTimetableWithRestrictions(divisions, restrictions, timeSlots, i
           
           const yearMappings = {
             '2nd Year': 'SE',
-            '3rd Year': 'TE', 
+            '3rd Year': 'TE',
             '4th Year': 'BE'
           };
 
@@ -354,7 +376,7 @@ router.get('/subjects/:academicYear', async (req, res) => {
     const subjects = await Subject.find({ academicYear });
     const lectureAssignments = await LectureAssignment.find({ academicYear })
       .populate('subjectId')
-      .populate('teacherId') 
+      .populate('teacherId')
       .populate('divisionId');
     const labAssignments = await LabAssignment.find({ academicYear })
       .populate('subjectId')
@@ -399,7 +421,7 @@ router.get('/status', async (req, res) => {
       lectureAssignmentsReady: lectureAssignments.length > 0,
       labAssignmentsReady: labAssignments.length > 0,
       restrictionsConfigured: restrictions.length > 0,
-      allReady: syllabuses.length > 0 && teachers.length > 0 && 
+      allReady: syllabuses.length > 0 && teachers.length > 0 &&
                 lectureAssignments.length > 0 && labAssignments.length > 0
     };
 
