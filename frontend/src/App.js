@@ -1,5 +1,11 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Navigate,
+  useLocation,
+} from 'react-router-dom';
 
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
@@ -11,14 +17,38 @@ import Lecture from './pages/Lecture';
 import Teachers from './pages/Teachers';
 import ConfigureResources from './pages/ConfigureResources';
 import Lab from './pages/Lab';
-import Generator from './pages/Generator'; // NEW
+import Generator from './pages/Generator';
 import TimetableRestrictions from './pages/TimetableRestrictions';
+import LoginPage from './pages/LoginPage';
 
 import './index.css';
 
 function App() {
   return (
     <Router>
+      <AppRoutes />
+    </Router>
+  );
+}
+
+function AppRoutes() {
+  const location = useLocation();
+  const isLoginPage = location.pathname === '/login';
+
+  // --- Layout for LOGIN page only ---
+  if (isLoginPage) {
+    return (
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        {/* anything else while not logged in goes to /login */}
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    );
+  }
+
+  // --- Layout for MAIN app (with header + sidebar) ---
+  return (
+    <>
       <Header />
       <div className="app-main">
         <Sidebar />
@@ -37,7 +67,7 @@ function App() {
           </Routes>
         </div>
       </div>
-    </Router>
+    </>
   );
 }
 
