@@ -7,27 +7,34 @@ const SavedTimetableSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
-  
+
   // Schedule ID reference
   schedule_id: {
     type: mongoose.Schema.Types.ObjectId,
     required: true,
     index: true
   },
-  
+
   // Academic years included
   academicYears: [{
     type: String,
     enum: ['SE', 'TE', 'BE'],
     required: true
   }],
-  
+
   // Divisions included
   divisions: [{
     type: String,
     required: true
   }],
-  
+
+  // ✅ NEW: Final resolved timetable grid (LECTURES + LABS)
+  // day → division → slot → activity
+  finalTimetableGrid: {
+    type: Object,
+    required: true
+  },
+
   // Metadata
   metadata: {
     labSessions: { type: Number, default: 0 },
@@ -36,7 +43,7 @@ const SavedTimetableSchema = new mongoose.Schema({
     restrictionsApplied: { type: Number, default: 0 },
     divisionsCount: { type: Number, default: 0 }
   },
-  
+
   // Generation statistics
   statistics: {
     labUtilization: String,
@@ -44,13 +51,13 @@ const SavedTimetableSchema = new mongoose.Schema({
     unscheduledLectures: Number,
     unscheduledLabs: Number
   },
-  
+
   // Saved timestamp
   savedAt: {
     type: Date,
     default: Date.now
   },
-  
+
   // Status
   status: {
     type: String,
@@ -61,7 +68,7 @@ const SavedTimetableSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Index for faster queries
+// Indexes for faster queries
 SavedTimetableSchema.index({ savedAt: -1 });
 SavedTimetableSchema.index({ status: 1 });
 

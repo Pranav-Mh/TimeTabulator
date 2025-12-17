@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import TimetableGrid from '../components/TimetableGrid';
+import { mergeFinalTimetable } from '../utils/mergeFinalTimetable';
 
 const Generator = () => {
   const [config, setConfig] = useState({
@@ -262,31 +263,57 @@ const Generator = () => {
       setSaveError('No schedule ID available. Please generate timetable first.');
       return;
     }
+  const finalTimetableGrid = mergeFinalTimetable(
+  generatedTimetable,
+  labScheduleData,
+  lectureScheduleData
+);
+
+
     
     try {
-      const response = await axios.post('http://localhost:5000/api/generator/save-timetable', {
-        name: timetableName.trim(),
-        schedule_id: currentScheduleId,
-        academicYears: config.includeBE ? ['SE', 'TE', 'BE'] : ['SE', 'TE'],
-        divisions: [
-          ...config.divisions.SE.map(d => `SE-${d}`),
-          ...config.divisions.TE.map(d => `TE-${d}`),
-          ...(config.includeBE ? config.divisions.BE.map(d => `BE-${d}`) : [])
-        ],
-        metadata: {
-          labSessions: labScheduleData?.scheduledLabs?.length || 0,
-          lectureSessions: lectureScheduleData?.scheduledLectures?.length || 0,
-          totalSessions: (labScheduleData?.scheduledLabs?.length || 0) + (lectureScheduleData?.scheduledLectures?.length || 0),
-          restrictionsApplied: config.restrictions.global.length + config.restrictions.yearWise.length,
-          divisionsCount: config.divisions.SE.length + config.divisions.TE.length + (config.includeBE ? config.divisions.BE.length : 0)
-        },
-        statistics: {
-          labUtilization: labScheduleData?.statistics?.utilizationRate || 'N/A',
-          lectureUtilization: lectureScheduleData?.statistics?.utilizationRate || 'N/A',
-          unscheduledLectures: lectureScheduleData?.unscheduledLectures?.length || 0,
-          unscheduledLabs: labScheduleData?.unscheduledLabs?.length || 0
-        }
-      });
+    const response = await axios.post(
+  'http://localhost:5000/api/generator/save-timetable',
+  {
+    name: timetableName.trim(),
+    schedule_id: currentScheduleId,
+    academicYears: config.includeBE ? ['SE', 'TE', 'BE'] : ['SE', 'TE'],
+    divisions: [
+      ...config.divisions.SE.map(d => `SE-${d}`),
+      ...config.divisions.TE.map(d => `TE-${d}`),
+      ...(config.includeBE ? config.divisions.BE.map(d => `BE-${d}`) : [])
+    ],
+
+    // ✅ THIS IS THE ONLY ADDITION
+    finalTimetableGrid: finalTimetableGrid,
+
+    metadata: {
+      labSessions: labScheduleData?.scheduledLabs?.length || 0,
+      lectureSessions: lectureScheduleData?.scheduledLectures?.length || 0,
+      totalSessions:
+        (labScheduleData?.scheduledLabs?.length || 0) +
+        (lectureScheduleData?.scheduledLectures?.length || 0),
+      restrictionsApplied:
+        config.restrictions.global.length +
+        config.restrictions.yearWise.length,
+      divisionsCount:
+        config.divisions.SE.length +
+        config.divisions.TE.length +
+        (config.includeBE ? config.divisions.BE.length : 0)
+    },
+    statistics: {
+      labUtilization:
+        labScheduleData?.statistics?.utilizationRate || 'N/A',
+      lectureUtilization:
+        lectureScheduleData?.statistics?.utilizationRate || 'N/A',
+      unscheduledLectures:
+        lectureScheduleData?.unscheduledLectures?.length || 0,
+      unscheduledLabs:
+        labScheduleData?.unscheduledLabs?.length || 0
+    }
+  }
+);
+
       
       if (response.data.success) {
         setSaveSuccess(`Timetable "${timetableName}" saved successfully!`);
