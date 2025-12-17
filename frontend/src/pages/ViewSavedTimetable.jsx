@@ -1,11 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { useParams, useNavigate } from 'react-router-dom';
 import TimetableGrid from '../components/TimetableGrid';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 
 const ViewSavedTimetable = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const pdfRef = useRef(); // 🔥 used for screenshot
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -22,8 +25,6 @@ const ViewSavedTimetable = () => {
       setLoading(true);
       setError('');
 
-      console.log('🔍 Fetching saved timetable:', id);
-
       const res = await axios.get(
         `http://localhost:5000/api/generator/saved-timetables/${id}`
       );
@@ -33,9 +34,7 @@ const ViewSavedTimetable = () => {
       }
 
       setSavedTimetable(res.data.savedTimetable);
-      setFinalGrid(res.data.finalTimetableGrid); // ✅ KEY FIX
-
-      console.log('✅ Final timetable grid loaded');
+      setFinalGrid(res.data.finalTimetableGrid);
 
     } catch (err) {
       console.error(err);
@@ -45,26 +44,35 @@ const ViewSavedTimetable = () => {
     }
   };
 
-  const formatDate = (date) =>
-    new Date(date).toLocaleString();
+  // 🔥 ONE DAY = ONE PAGE PDF EXPORT
+  const exportPDF = async () => {
+    const pdf = new jsPDF('landscape', 'mm', 'a4');
+    const dayElements = pdfRef.current.querySelectorAll('.pdf-day');
+
+    for (let i = 0; i < dayElements.length; i++) {
+      const canvas = await html2canvas(dayElements[i], {
+        scale: 2,
+        useCORS: true
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+
+      if (i !== 0) pdf.addPage();
+
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+    }
+
+    pdf.save(`${savedTimetable.name}.pdf`);
+  };
 
   if (loading) {
-    return (
-      <div style={{ padding: 40, textAlign: 'center' }}>
-        <h2>⏳ Loading timetable...</h2>
-      </div>
-    );
+    return <h2 style={{ textAlign: 'center' }}>⏳ Loading timetable...</h2>;
   }
 
-  if (error || !savedTimetable || !finalGrid) {
-    return (
-      <div style={{ padding: 40, textAlign: 'center' }}>
-        <h2>❌ {error || 'Timetable not found'}</h2>
-        <button onClick={() => navigate('/dashboard')}>
-          ← Back to Dashboard
-        </button>
-      </div>
-    );
+  if (error || !finalGrid) {
+    return <h2 style={{ textAlign: 'center' }}>❌ Timetable not found</h2>;
   }
 
   return (
@@ -78,20 +86,40 @@ const ViewSavedTimetable = () => {
       </button>
 
       <h1>📅 {savedTimetable.name}</h1>
-      <p>Saved on {formatDate(savedTimetable.savedAt)}</p>
+      <p>Saved on {new Date(savedTimetable.savedAt).toLocaleString()}</p>
 
-      {/* Stats */}
-      <div style={{ display: 'flex', gap: 20, margin: '20px 0' }}>
-        <div>🔬 Labs: {savedTimetable.metadata.labSessions}</div>
-        <div>🎓 Lectures: {savedTimetable.metadata.lectureSessions}</div>
-        <div>🏫 Divisions: {savedTimetable.divisions.length}</div>
+      {/* 🔥 THIS IS SCREENSHOT SOURCE */}
+      <div ref={pdfRef} style={{ background: '#fff', padding: 10 }}>
+        {Object.entries(finalGrid).map(([day, dayGrid]) => (
+          <div
+            key={day}
+            className="pdf-day"
+            style={{ marginBottom: '40px' }}
+          >
+            <TimetableGrid
+              timetableData={{ [day]: dayGrid }}
+              readOnly
+            />
+          </div>
+        ))}
       </div>
 
-      {/* ✅ FINAL TIMETABLE GRID */}
-      <TimetableGrid
-        timetableData={finalGrid}
-        readOnly={true}
-      />
+      {/* Export Button */}
+      <button
+        onClick={exportPDF}
+        style={{
+          marginTop: 20,
+          padding: '10px 20px',
+          backgroundColor: '#dc2626',
+          color: 'white',
+          border: 'none',
+          borderRadius: '6px',
+          fontWeight: 600,
+          cursor: 'pointer'
+        }}
+      >
+        📄 Export PDF (One Day = One Page)
+      </button>
     </div>
   );
 };
