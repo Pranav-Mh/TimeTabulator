@@ -1126,7 +1126,7 @@ const TimetableRestrictions = () => {
           )}
 
           {/* Step 2: Choose Booking Type */}
-          {timeConfig.isConfigured && timeSlots.length > 0 && (
+          {timeSlots.length > 0 && (
             <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
               <h3 style={{ color: '#d63031', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 ⚙️ Step 2: Choose Booking Type

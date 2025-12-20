@@ -87,6 +87,7 @@ app.use((err, req, res, next) => {
     timestamp: new Date().toISOString()
   });
 });
+app.use('/api/reset', require('./routes/resetRoutes'));
 
 // 404 handler
 app.use((req, res) => {
@@ -97,5 +98,6 @@ app.use((req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+
 
 module.exports = app;

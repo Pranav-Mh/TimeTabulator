@@ -49,9 +49,15 @@ const Dashboard = () => {
     navigate(`/view-timetable/${id}`);
   };
 
-  const handleGenerateNew = () => {
-    navigate('/generator');
-  };
+  const handleGenerateNew = async () => {
+  try {
+    await axios.post('http://localhost:5000/api/reset/reset-working-data');
+    navigate('/syllabus');
+  } catch (err) {
+    alert('Failed to start new timetable');
+  }
+};
+
 
   const formatTime = (dateString) => {
     const date = new Date(dateString);

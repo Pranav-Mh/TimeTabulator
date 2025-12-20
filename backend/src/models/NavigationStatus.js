@@ -50,7 +50,7 @@ NavigationStatusSchema.methods.updatePermissions = async function() {
   
   // Check lecture assignments completion
   const lectureCount = await LectureAssignment.countDocuments();
-  this.lectureAssignmentsCompleted = lectureCount >= 6;
+  this.lectureAssignmentsCompleted = lectureCount >= 4;
   this.canAccessLab = this.lectureAssignmentsCompleted && this.canAccessLecture;
   
   // Check lab assignments completion  
