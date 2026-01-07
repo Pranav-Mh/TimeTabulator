@@ -6,27 +6,32 @@ const LabAssignmentSchema = new mongoose.Schema({
     ref: 'Subject',
     required: true
   },
+
   divisionId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Division', 
+    ref: 'Division',
     required: true
   },
+
+  // ✅ FIXED: Removed hard max limit (supports 3 or 4 batches)
   batchNumber: {
     type: Number,
     required: true,
-    min: 1,
-    max: 3 // SE-A1, SE-A2, SE-A3
+    min: 1
   },
+
   teacherId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Teacher',
     required: true
   },
+
   academicYear: {
     type: String,
     enum: ['SE', 'TE', 'BE'],
     required: true
   },
+
   hoursPerWeek: {
     type: Number,
     required: true
@@ -36,6 +41,9 @@ const LabAssignmentSchema = new mongoose.Schema({
 });
 
 // Prevent duplicate assignments (same subject + division + batch)
-LabAssignmentSchema.index({ subjectId: 1, divisionId: 1, batchNumber: 1 }, { unique: true });
+LabAssignmentSchema.index(
+  { subjectId: 1, divisionId: 1, batchNumber: 1 },
+  { unique: true }
+);
 
 module.exports = mongoose.model('LabAssignment', LabAssignmentSchema);

@@ -13,6 +13,12 @@ const Lab = () => {
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
+  // 🔥 UI batch selector
+  const [batchCount, setBatchCount] = useState(3);
+  const [pendingBatchCount, setPendingBatchCount] = useState(null);
+  const [showBatchConfirm, setShowBatchConfirm] = useState(false);
+
+  /* ---------------- ACCESS ---------------- */
   useEffect(() => {
     checkAccess();
   }, []);
@@ -41,13 +47,21 @@ const Lab = () => {
     }
   };
 
+  /* ---------------- DATA FETCH ---------------- */
   const fetchDivisions = async () => {
     try {
-      const res = await axios.get(`http://localhost:5000/api/labs/divisions/${selectedYear}`);
+      const res = await axios.get(
+        `http://localhost:5000/api/labs/divisions/${selectedYear}`
+      );
+
       setDivisions(res.data);
+
       if (res.data.length > 0) {
-        const firstDivision = res.data[0].name.split('-')[1]; // SE-A -> A
-        setSelectedDivision(firstDivision);
+        const first = res.data[0];
+        setSelectedDivision(first.name.split('-')[1]);
+
+        // 🔥 sync UI with backend
+        setBatchCount(first.batchCount || 3);
       }
     } catch (err) {
       console.error('Error fetching divisions:', err);
@@ -65,33 +79,16 @@ const Lab = () => {
 
   const fetchSubjects = async () => {
     try {
-      const res = await axios.get(`http://localhost:5000/api/labs/subjects/${selectedYear}/${selectedDivision}`);
-      
-      // CRITICAL: Process subjects to ensure batch assignments are properly structured
-      const processedSubjects = res.data.subjects.map(subject => {
-        const processedBatches = subject.batches?.map(batch => {
-          // If there's an assigned teacher, ensure proper structure
-          if (batch.assignedTeacher && batch.assignedTeacher._id) {
-            return {
-              ...batch,
-              assignedTeacher: {
-                id: batch.assignedTeacher._id,
-                _id: batch.assignedTeacher._id,
-                name: batch.assignedTeacher.name,
-                teacherId: batch.assignedTeacher.teacherId
-              }
-            };
-          }
-          return batch;
-        }) || [];
-        
-        return {
-          ...subject,
-          batches: processedBatches
-        };
-      });
-      
-      setSubjects(processedSubjects);
+      const res = await axios.get(
+        `http://localhost:5000/api/labs/subjects/${selectedYear}/${selectedDivision}`
+      );
+
+      setSubjects(res.data.subjects || []);
+
+      // 🔥 trust backend batch count
+      if (res.data.subjects?.[0]?.batches?.length) {
+        setBatchCount(res.data.subjects[0].batches.length);
+      }
     } catch (err) {
       console.error('Error fetching lab subjects:', err);
       setSubjects([]);
@@ -100,157 +97,179 @@ const Lab = () => {
 
   const fetchTeacherWorkload = async () => {
     try {
-      const res = await axios.get('http://localhost:5000/api/labs/teacher-workload');
+      const res = await axios.get(
+        'http://localhost:5000/api/labs/teacher-workload'
+      );
       setTeacherWorkload(res.data);
     } catch (err) {
       console.error('Error fetching teacher workload:', err);
     }
   };
 
+  /* ---------------- ASSIGN ---------------- */
   const handleTeacherAssignment = async (subjectId, batchNumber, teacherId) => {
     if (!teacherId) return;
-    
+
     setErrorMessage('');
     setSuccessMessage('');
-    
+
     try {
-      const division = divisions.find(d => d.name === `${selectedYear}-${selectedDivision}`);
-      
+      const division = divisions.find(
+        d => d.name === `${selectedYear}-${selectedDivision}`
+      );
+
       await axios.post('http://localhost:5000/api/labs/assign', {
         subjectId,
         divisionId: division._id,
         batchNumber,
         teacherId
       });
-      
+
       setSuccessMessage('Lab teacher assigned successfully!');
-      
-      // Update UI immediately before refetching
-      const selectedTeacher = teachers.find(t => t._id === teacherId);
-      if (selectedTeacher) {
-        setSubjects(prevSubjects => 
-          prevSubjects.map(subject => 
-            subject._id === subjectId 
-              ? { 
-                  ...subject, 
-                  batches: subject.batches.map(batch =>
-                    batch.batchNumber === batchNumber
-                      ? {
-                          ...batch,
-                          assignedTeacher: {
-                            id: selectedTeacher._id,
-                            _id: selectedTeacher._id,
-                            name: selectedTeacher.name,
-                            teacherId: selectedTeacher.teacherId
-                          }
-                        }
-                      : batch
-                  )
-                }
-              : subject
-          )
-        );
-      }
-      
-      // Refetch data to ensure consistency
-      fetchSubjects();
-      fetchTeacherWorkload();
-      
+
+      await fetchSubjects();
+      await fetchTeacherWorkload();
+
       setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err) {
-      const errorMsg = err.response?.data?.error || 'Failed to assign lab teacher';
-      setErrorMessage(errorMsg);
+      setErrorMessage(err.response?.data?.error || 'Failed to assign lab teacher');
     }
   };
 
+  /* ---------------- BLOCK ---------------- */
   if (!canAccess) {
     return (
       <div className="lab-page">
         <h1>Assign Teachers for Practical Lab</h1>
-        <div style={{ color: 'red', backgroundColor: '#ffe6e6', padding: '20px', borderRadius: '8px', textAlign: 'center', marginTop: '50px' }}>
+        <div style={{ color: 'red', backgroundColor: '#ffe6e6', padding: 20 }}>
           <h2>Access Denied</h2>
-          <p>Complete both SE and TE syllabus configuration before accessing lab assignments.</p>
+          <p>Complete both SE and TE syllabus configuration.</p>
         </div>
       </div>
     );
   }
 
+  /* ---------------- UI ---------------- */
   return (
     <div className="lab-page">
       <h1>Assign Teachers for Practical Lab</h1>
 
-      {/* Error/Success Messages */}
-      {errorMessage && (
-        <div style={{ color: 'red', backgroundColor: '#ffe6e6', padding: '10px', borderRadius: '5px', marginBottom: '10px', border: '1px solid red' }}>
-          {errorMessage}
-        </div>
-      )}
-      {successMessage && (
-        <div style={{ color: 'green', backgroundColor: '#e6ffe6', padding: '10px', borderRadius: '5px', marginBottom: '10px', border: '1px solid green' }}>
-          {successMessage}
-        </div>
-      )}
+      {errorMessage && <div style={{ color: 'red' }}>{errorMessage}</div>}
+      {successMessage && <div style={{ color: 'green' }}>{successMessage}</div>}
 
-      {/* Year and Division Selection */}
-      <div style={{ marginBottom: '30px', display: 'flex', gap: '20px', alignItems: 'center' }}>
-        <div>
-          <label>Year: </label>
-          <select 
-            value={selectedYear} 
-            onChange={(e) => setSelectedYear(e.target.value)} 
-            style={{ marginLeft: '10px', padding: '5px' }}
-          >
-            <option value="SE">SE</option>
-            <option value="TE">TE</option>
-            <option value="BE">BE</option>
-          </select>
-        </div>
-        
-        <div>
-          <label>Division: </label>
-          <select 
-            value={selectedDivision} 
-            onChange={(e) => setSelectedDivision(e.target.value)} 
-            style={{ marginLeft: '10px', padding: '5px' }}
-          >
-            {divisions.map(division => {
-              const divLetter = division.name.split('-')[1]; // SE-A -> A
-              return (
-                <option key={division._id} value={divLetter}>{divLetter}</option>
-              );
-            })}
-          </select>
-        </div>
+      {/* Year & Division */}
+      <div style={{ display: 'flex', gap: 20, marginBottom: 20 }}>
+        <select value={selectedYear} onChange={e => setSelectedYear(e.target.value)}>
+          <option value="SE">SE</option>
+          <option value="TE">TE</option>
+          <option value="BE">BE</option>
+        </select>
+
+        <select
+          value={selectedDivision}
+          onChange={e => setSelectedDivision(e.target.value)}
+        >
+          {divisions.map(d => (
+            <option key={d._id} value={d.name.split('-')[1]}>
+              {d.name.split('-')[1]}
+            </option>
+          ))}
+        </select>
       </div>
 
-      {/* Lab Subjects Table */}
-      {subjects.length > 0 ? (
-        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '30px' }}>
+      {/* Batch Count */}
+      <div style={{ marginBottom: 20 }}>
+        <label><strong>Batch Count:</strong></label>
+        <select
+          value={batchCount}
+          onChange={e => {
+            setPendingBatchCount(Number(e.target.value));
+            setShowBatchConfirm(true);
+          }}
+          style={{ marginLeft: 10 }}
+        >
+          <option value={3}>3 Batches</option>
+          <option value={4}>4 Batches</option>
+        </select>
+      </div>
+
+      {/* CONFIRM */}
+      {showBatchConfirm && (
+        <div style={{ background: '#fff3cd', padding: 15, marginBottom: 20 }}>
+          <p>⚠️ Changing batch count will update lab structure.</p>
+          <button
+            onClick={async () => {
+              try {
+                const division = divisions.find(
+                  d => d.name === `${selectedYear}-${selectedDivision}`
+                );
+
+                await axios.put(
+                  `http://localhost:5000/api/labs/division/${division._id}/batch-count`,
+                  { batchCount: pendingBatchCount }
+                );
+
+                setBatchCount(pendingBatchCount);
+                await fetchSubjects();
+
+                setShowBatchConfirm(false);
+                setPendingBatchCount(null);
+              } catch {
+                setErrorMessage('Failed to update batch count');
+              }
+            }}
+          >
+            Confirm
+          </button>
+          <button
+            style={{ marginLeft: 10 }}
+            onClick={() => {
+              setShowBatchConfirm(false);
+              setPendingBatchCount(null);
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {/* 🔥 FINAL FIXED TABLE */}
+      {subjects.length > 0 && (
+        <table border="1" width="100%">
           <thead>
-            <tr style={{ backgroundColor: '#f8f9fa' }}>
-              <th style={{ border: '1px solid #dee2e6', padding: '12px' }}>Lab Subject Name</th>
-              <th style={{ border: '1px solid #dee2e6', padding: '12px' }}>Hours/Week</th>
-              <th style={{ border: '1px solid #dee2e6', padding: '12px' }}>{selectedYear}-{selectedDivision}1</th>
-              <th style={{ border: '1px solid #dee2e6', padding: '12px' }}>{selectedYear}-{selectedDivision}2</th>
-              <th style={{ border: '1px solid #dee2e6', padding: '12px' }}>{selectedYear}-{selectedDivision}3</th>
+            <tr>
+              <th>Subject</th>
+              <th>Hours</th>
+              {subjects[0].batches.map(b => (
+                <th key={b.batchNumber}>
+                  {selectedDivision}{b.batchNumber}
+                </th>
+              ))}
             </tr>
           </thead>
+
           <tbody>
             {subjects.map(subject => (
               <tr key={subject._id}>
-                <td style={{ border: '1px solid #dee2e6', padding: '10px' }}>{subject.name}</td>
-                <td style={{ border: '1px solid #dee2e6', padding: '10px', textAlign: 'center' }}>{subject.hoursPerWeek}</td>
-                {subject.batches?.map(batch => (
-                  <td key={batch.batchNumber} style={{ border: '1px solid #dee2e6', padding: '8px' }}>
-                    <select 
-                      value={batch.assignedTeacher?._id || batch.assignedTeacher?.id || ''} 
-                      onChange={(e) => handleTeacherAssignment(subject._id, batch.batchNumber, e.target.value)}
-                      style={{ width: '100%', padding: '5px' }}
+                <td>{subject.name}</td>
+                <td>{subject.hoursPerWeek}</td>
+
+                {subject.batches.map(batch => (
+                  <td key={batch.batchNumber}>
+                    <select
+                      value={batch.assignedTeacher?._id || ''}
+                      onChange={e =>
+                        handleTeacherAssignment(
+                          subject._id,
+                          batch.batchNumber,
+                          e.target.value
+                        )
+                      }
                     >
                       <option value="">Select Teacher</option>
-                      {teachers.map(teacher => (
-                        <option key={teacher._id} value={teacher._id}>
-                          {teacher.name} ({teacher.teacherId})
+                      {teachers.map(t => (
+                        <option key={t._id} value={t._id}>
+                          {t.name}
                         </option>
                       ))}
                     </select>
@@ -260,41 +279,6 @@ const Lab = () => {
             ))}
           </tbody>
         </table>
-      ) : (
-        <div style={{ textAlign: 'center', color: '#6c757d', marginTop: '50px' }}>
-          <p>No practical subjects found for {selectedYear}-{selectedDivision}</p>
-        </div>
-      )}
-
-      {/* Teacher Workload Summary */}
-      {teacherWorkload.length > 0 && (
-        <div>
-          <h3>Teacher Workload Summary</h3>
-          <table style={{ borderCollapse: 'collapse', width: '100%' }}>
-            <thead>
-              <tr style={{ backgroundColor: '#f8f9fa' }}>
-                <th style={{ border: '1px solid #dee2e6', padding: '8px' }}>Teacher Name</th>
-                <th style={{ border: '1px solid #dee2e6', padding: '8px' }}>Lecture Hours</th>
-                <th style={{ border: '1px solid #dee2e6', padding: '8px' }}>Lab Hours</th>
-                <th style={{ border: '1px solid #dee2e6', padding: '8px' }}>Total Hours</th>
-                <th style={{ border: '1px solid #dee2e6', padding: '8px' }}>Available Hours</th>
-              </tr>
-            </thead>
-            <tbody>
-              {teacherWorkload.map(teacher => (
-                <tr key={teacher.teacherId}>
-                  <td style={{ border: '1px solid #dee2e6', padding: '8px' }}>{teacher.name}</td>
-                  <td style={{ border: '1px solid #dee2e6', padding: '8px', textAlign: 'center' }}>{teacher.lectureHours}</td>
-                  <td style={{ border: '1px solid #dee2e6', padding: '8px', textAlign: 'center' }}>{teacher.labHours}</td>
-                  <td style={{ border: '1px solid #dee2e6', padding: '8px', textAlign: 'center' }}>{teacher.totalHours}/{teacher.maxHours}</td>
-                  <td style={{ border: '1px solid #dee2e6', padding: '8px', textAlign: 'center', color: teacher.availableHours < 0 ? 'red' : 'green' }}>
-                    {teacher.availableHours < 0 ? <span>⚠{teacher.availableHours}</span> : <span>{teacher.availableHours}</span>}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
       )}
     </div>
   );

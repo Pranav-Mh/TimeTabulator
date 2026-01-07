@@ -31,7 +31,7 @@ class LabSchedulingEngine {
     
     // Step 2: Get divisions with remaining work (same as actual scheduling)
     const divisionsWithWork = this.getDivisionsWithRemainingWorkForAnalysis(inputData);
-    const batchesPerDivision = 3;
+    const batchesPerDivision = this.getGlobalBatchCount(inputData);
     const totalBatches = divisionsWithWork.length * batchesPerDivision;
     const currentLabCount = inputData.resources.length;
     
@@ -49,7 +49,14 @@ class LabSchedulingEngine {
     
     for (const day of daysToAnalyze) {
       const availableTimeBlocks = this.getAllAvailable2HourBlocks(day, inputData.slots, inputData, divisionsWithWork);
-      const analysis = this.analyzeLabRequirementForDay(day, divisionsWithWork, availableTimeBlocks, currentLabCount);
+      const analysis = this.analyzeLabRequirementForDay(
+  day,
+  divisionsWithWork,
+  availableTimeBlocks,
+  currentLabCount,
+  batchesPerDivision
+);
+
       
       detailedAnalysis[day] = analysis;
       
@@ -256,8 +263,8 @@ class LabSchedulingEngine {
     return Array.from(divisionsWithWork);
   }
 
-  analyzeLabRequirementForDay(day, divisions, availableTimeBlocks, currentLabCount) {
-    const batchesPerDivision = 3;
+  analyzeLabRequirementForDay(day, divisions, availableTimeBlocks, currentLabCount, batchesPerDivision) {
+
     const totalDivisions = divisions.length;
     const totalBatches = totalDivisions * batchesPerDivision;
     
@@ -308,14 +315,16 @@ class LabSchedulingEngine {
       }
     }
     
-    return {
-      availableSlots: availableTimeBlocks.length,
-      canSchedule: totalScheduledDivisions,
-      unscheduledDivisions: unscheduledDivisions,
-      additionalLabsNeeded: additionalLabsNeeded,
-      slotAnalysis: slotAnalysis,
-      maxDivisionsPerSlot: maxDivisionsPerSlot
-    };
+  return {
+  availableSlots: availableTimeBlocks.length,
+  canSchedule: totalScheduledDivisions,
+  unscheduledDivisions,
+  additionalLabsNeeded,
+  slotAnalysis,
+  maxDivisionsPerSlot,
+  batchesPerDivision // ✅ ADD THIS
+};
+
   }
 
   generateFixedLabRequirementReasoning(day, analysis, totalDivisions, totalBatches, currentLabs) {
@@ -342,7 +351,9 @@ class LabSchedulingEngine {
       reasoning += `      • Unscheduled: ${analysis.unscheduledDivisions} divisions\n`;
       
       if (analysis.unscheduledDivisions > 0) {
-        const remainingBatches = analysis.unscheduledDivisions * 3;
+        const remainingBatches =
+  analysis.unscheduledDivisions * analysis.batchesPerDivision;
+
         const maxUnused = Math.max(...analysis.slotAnalysis.map(s => s.unusedLabs));
         
         reasoning += `\n   🔴 Problem identified:\n`;
@@ -982,112 +993,136 @@ class LabSchedulingEngine {
   }
 
   async gatherInputData() {
-    console.log('📥 Gathering input data from database...');
-    
-    const divisions = {};
-    const divisionsData = await Division.find()
-      .populate('syllabusId')
-      .lean();
-    
-    divisionsData.forEach(div => {
-      const batches = div.batches.map(b => b.name);
-      divisions[div.name] = batches;
-    });
-    
-    const teachers = await Teacher.find().lean();
-    console.log(`✅ Teachers fetched from MongoDB: ${teachers.length}`);
-    
-    const teacherMap = {};
-    const teacherIdMap = {};
-    
-    teachers.forEach(teacher => {
-      teacherMap[teacher._id.toString()] = {
+  console.log('📥 Gathering input data from database (batchCount aware)...');
+
+  const divisions = {};
+
+  // 1️⃣ Fetch divisions with batchCount
+  const divisionsData = await Division.find()
+    .populate('syllabusId')
+    .lean();
+
+  divisionsData.forEach(div => {
+    const year = div.academicYear;
+    const divisionName = div.name; // e.g. SE-A
+    const batchCount = div.batchCount || 3;
+
+    const existingBatches = (div.batches || []).map(b => b.name);
+    const normalizedBatches = [];
+
+    // 2️⃣ Auto-create missing batches (A1..A3 / A4)
+    for (let i = 1; i <= batchCount; i++) {
+      const batchName = `${divisionName}${i}`;
+
+      if (existingBatches.includes(batchName)) {
+        normalizedBatches.push(batchName);
+      } else {
+        // 🔹 Virtual batch (no teacher yet)
+        normalizedBatches.push(batchName);
+        console.log(`➕ Auto-created missing batch: ${batchName}`);
+      }
+    }
+
+    divisions[divisionName] = normalizedBatches;
+  });
+
+  console.log(`✅ Divisions normalized with batchCount support`);
+
+  // 3️⃣ Teachers
+  const teachers = await Teacher.find().lean();
+
+  const teacherMap = {};
+  const teacherIdMap = {};
+
+  teachers.forEach(teacher => {
+    teacherMap[teacher._id.toString()] = {
+      name: teacher.name,
+      teacherId: teacher.teacherId,
+      displayId: teacher.teacherId || teacher.name
+    };
+
+    if (teacher.teacherId) {
+      teacherIdMap[teacher.teacherId.toString()] = {
         name: teacher.name,
         teacherId: teacher.teacherId,
-        displayId: teacher.teacherId || teacher.name
+        displayId: teacher.name
       };
-      
-      if (teacher.teacherId) {
-        teacherIdMap[teacher.teacherId.toString()] = {
-          name: teacher.name,
-          teacherId: teacher.teacherId,
-          displayId: teacher.name
-        };
-      }
-    });
-    
-    const labAssignments = {};
-    const assignmentsData = await LabAssignment.find()
-      .populate('subjectId teacherId divisionId')
-      .lean();
-    
-    assignmentsData.forEach(assignment => {
-      const batchName = `${assignment.divisionId.name}${assignment.batchNumber}`;
-      
-      if (!labAssignments[batchName]) {
-        labAssignments[batchName] = [];
-      }
-      
-      const teacherMongoId = assignment.teacherId._id.toString();
-      const teacherDbId = assignment.teacherId.teacherId;
-      
-      let teacherInfo = {
-        name: 'Unknown Teacher',
-        teacherId: 'Unknown',
-        displayId: 'Unknown'
-      };
-      
-      if (teacherDbId && teacherIdMap[teacherDbId.toString()]) {
-        teacherInfo = teacherIdMap[teacherDbId.toString()];
-      } else if (teacherMap[teacherMongoId]) {
-        teacherInfo = teacherMap[teacherMongoId];
-      } else {
-        teacherInfo = {
-          name: assignment.teacherId.name || 'Unknown Teacher',
-          teacherId: assignment.teacherId.teacherId || 'Unknown',
-          displayId: assignment.teacherId.name || assignment.teacherId.teacherId || 'Unknown'
-        };
-      }
-      
-      labAssignments[batchName].push({
-        subject: assignment.subjectId.name,
-        teacher_id: teacherMongoId,
-        teacher_name: teacherInfo.name,
-        teacher_display_id: teacherInfo.displayId,
-        teacher_db_id: teacherDbId,
-        hours_per_week: assignment.hoursPerWeek,
-        hours_completed: 0
-      });
-    });
-    
-    const resources = await Resource.find({ type: 'LAB', isActive: true }).lean();
-    
-    const timeConfig = await TimeSlotConfiguration.findOne().lean();
-    const slots = timeConfig?.timeSlots || [];
-    
-    const globalRestrictions = await TimetableRestriction.find({
-      scope: 'global',
-      isActive: true
-    }).lean();
-    
-    const yearRestrictions = await TimetableRestriction.find({
-      scope: 'year-specific',
-      isActive: true
-    }).lean();
-    
-    console.log(`✅ Data gathered: ${Object.keys(divisions).length} divisions, ${Object.keys(labAssignments).length} batch assignments, ${resources.length} labs`);
-    
-    return {
-      divisions,
-      lab_assignments: labAssignments,
-      resources,
-      slots,
-      global_restrictions: this.formatRestrictions(globalRestrictions),
-      year_restrictions: this.formatRestrictions(yearRestrictions),
-      teacher_map: teacherMap,
-      teacher_id_map: teacherIdMap
+    }
+  });
+
+  // 4️⃣ Lab assignments (batch-aware)
+  const labAssignments = {};
+  const assignmentsData = await LabAssignment.find()
+    .populate('subjectId teacherId divisionId')
+    .lean();
+
+  assignmentsData.forEach(assignment => {
+    const batchName = `${assignment.divisionId.name}${assignment.batchNumber}`;
+
+    if (!labAssignments[batchName]) {
+      labAssignments[batchName] = [];
+    }
+
+    const teacherMongoId = assignment.teacherId._id.toString();
+    const teacherDbId = assignment.teacherId.teacherId;
+
+    let teacherInfo = teacherMap[teacherMongoId] || {
+      name: assignment.teacherId.name || 'Unknown',
+      teacherId: assignment.teacherId.teacherId || 'Unknown',
+      displayId: assignment.teacherId.name || 'Unknown'
     };
-  }
+
+    labAssignments[batchName].push({
+      subject: assignment.subjectId.name,
+      teacher_id: teacherMongoId,
+      teacher_name: teacherInfo.name,
+      teacher_display_id: teacherInfo.displayId,
+      teacher_db_id: teacherDbId,
+      hours_per_week: assignment.hoursPerWeek,
+      hours_completed: 0
+    });
+  });
+
+  // 5️⃣ Resources
+  const resources = await Resource.find({ type: 'LAB', isActive: true }).lean();
+
+  // 6️⃣ Time slots
+  const timeConfig = await TimeSlotConfiguration.findOne().lean();
+  const slots = timeConfig?.timeSlots || [];
+
+  // 7️⃣ Restrictions
+  const globalRestrictions = await TimetableRestriction.find({
+    scope: 'global',
+    isActive: true
+  }).lean();
+
+  const yearRestrictions = await TimetableRestriction.find({
+    scope: 'year-specific',
+    isActive: true
+  }).lean();
+
+  console.log(
+    `✅ Input ready: ${Object.keys(divisions).length} divisions, ` +
+    `${Object.keys(labAssignments).length} batch assignments, ` +
+    `${resources.length} labs`
+  );
+
+  return {
+    divisions,
+    lab_assignments: labAssignments,
+    resources,
+    slots,
+    global_restrictions: this.formatRestrictions(globalRestrictions),
+    year_restrictions: this.formatRestrictions(yearRestrictions),
+    teacher_map: teacherMap,
+    teacher_id_map: teacherIdMap
+  };
+}
+getGlobalBatchCount(inputData) {
+  const firstDivision = Object.keys(inputData.divisions)[0];
+  return inputData.divisions[firstDivision]?.length || 3;
+}
+
 
   getDivisionAcademicYear(division) {
     if (division.startsWith('SE-')) return 'SE';

@@ -6,20 +6,37 @@ const DivisionSchema = new mongoose.Schema({
     required: true,
     unique: true
   },
+
   academicYear: {
     type: String,
     enum: ['SE', 'TE', 'BE'],
     required: true
   },
+
   syllabusId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Syllabus',
     required: true
   },
-  batches: [{
-    name: String, // SE-A1, SE-A2, SE-A3
-    batchNumber: Number
-  }]
+
+  // ✅ NEW: Source of truth for lab batch count
+  batchCount: {
+    type: Number,
+    enum: [3, 4],
+    default: 3
+  },
+
+  // Existing batches (A1, A2, A3, A4...)
+  batches: [
+    {
+      name: {
+        type: String
+      },
+      batchNumber: {
+        type: Number
+      }
+    }
+  ]
 }, {
   timestamps: true
 });
